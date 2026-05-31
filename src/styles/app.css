@@ -2,6 +2,8 @@
 
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --color-primary: #171717;
   --color-on-primary: #ffffff;
@@ -112,4 +114,49 @@
 /* Dark mode section gradient background */
 .dark-mesh-gradient-bg {
   background: radial-gradient(circle at 50% -20%, rgba(0, 124, 240, 0.25) 0%, rgba(255, 0, 128, 0.1) 40%, rgba(24, 24, 27, 0) 70%), #0a0a0a;
+}
+
+/* Dark theme custom overrides */
+.dark {
+  --color-primary: #ffffff;
+  --color-on-primary: #0a0a0a;
+  --color-ink: #ededed;
+  --color-body: #a0a0a0;
+  --color-mute: #666666;
+  --color-hairline: #222222;
+  --color-hairline-strong: #444444;
+  --color-canvas: #000000;
+  --color-canvas-soft: #0a0a0a;
+  --color-canvas-soft-2: #111111;
+  --color-link: #3291ff;
+  --color-link-deep: #0070f3;
+  --color-link-bg-soft: #002b5c;
+  --color-success: #3291ff;
+  --color-error: #ff1a1a;
+  --color-error-soft: #441a1a;
+  --color-error-deep: #ff5555;
+  --color-warning: #f7b955;
+  --color-warning-soft: #44331a;
+  --color-warning-deep: #ffc87a;
+  
+  --color-violet: #8a3ffc;
+  --color-violet-soft: #3b185f;
+  --color-violet-deep: #a86dfb;
+  
+  --color-cyan: #00ffd0;
+  --color-cyan-soft: #00332c;
+  --color-cyan-deep: #33ffda;
+  
+  --color-pink: #f81ce5;
+  --color-magenta: #ff3366;
+
+  --shadow-level-1: 0px 0px 0px 1px rgba(255, 255, 255, 0.08);
+  --shadow-level-2: 0px 1px 1px rgba(0, 0, 0, 0.4), 0px 2px 2px rgba(0, 0, 0, 0.4), 0px 0px 0px 1px rgba(255, 255, 255, 0.08);
+  --shadow-level-3: 0px 2px 2px rgba(0, 0, 0, 0.4), 0px 8px 8px -8px rgba(0, 0, 0, 0.4), 0px 0px 0px 1px rgba(255, 255, 255, 0.08);
+  --shadow-level-4: 0px 2px 2px rgba(0, 0, 0, 0.4), 0px 8px 16px -4px rgba(0, 0, 0, 0.4), 0px 0px 0px 1px rgba(255, 255, 255, 0.08);
+  --shadow-level-5: 0px 1px 1px rgba(0, 0, 0, 0.4), 0px 8px 16px -4px rgba(0, 0, 0, 0.4), 0px 24px 32px -8px rgba(0, 0, 0, 0.5), 0px 0px 0px 1px rgba(255, 255, 255, 0.08);
+}
+
+.dark .mesh-gradient-bg {
+  background: radial-gradient(circle at 50% -20%, rgba(0, 124, 240, 0.25) 0%, rgba(255, 0, 128, 0.1) 40%, rgba(24, 24, 27, 0) 70%), var(--color-canvas);
 }

@@ -65,6 +65,27 @@ const schemaMarkup = {
 
 		<!-- JSON-LD Schema -->
 		<script type="application/ld+json" set:html={JSON.stringify(schemaMarkup)} />
+
+		<!-- Theme Initialization Script -->
+		<script is:inline>
+			(function() {
+				const theme = (() => {
+					if (typeof localStorage !== 'undefined' && localStorage.getItem('theme')) {
+						return localStorage.getItem('theme');
+					}
+					if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+						return 'dark';
+					}
+					return 'light';
+				})();
+			
+				if (theme === 'dark') {
+					document.documentElement.classList.add('dark');
+				} else {
+					document.documentElement.classList.remove('dark');
+				}
+			})();
+		</script>
 	</head>
 	<body class="bg-canvas-soft text-ink selection:bg-primary selection:text-on-primary min-h-screen flex flex-col">
 		<slot />
