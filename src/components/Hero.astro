@@ -1,0 +1,52 @@
+---
+import ConverterWidget from './ConverterWidget.astro';
+---
+<section class="relative w-full overflow-hidden mesh-gradient-bg border-b border-hairline py-16 md:py-24" aria-label="YouTube Converter Hero">
+  <!-- Mesh decorative atmospheric glow -->
+  <div class="absolute inset-0 pointer-events-none opacity-40 select-none">
+    <div class="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-gradient-to-b from-[#007cf0]/10 via-[#7928ca]/5 to-transparent rounded-full blur-[100px]"></div>
+  </div>
+
+  <div class="max-w-[1200px] mx-auto px-6 relative z-10 flex flex-col items-center text-center">
+    <!-- Eyebrow Badge -->
+    <div class="inline-flex items-center space-x-2 bg-canvas-soft-2 px-3 py-1 rounded-full border border-hairline mb-6 shadow-level-1 select-none animate-fade-in">
+      <span class="w-1.5 h-1.5 bg-[#00dfd8] rounded-full animate-pulse"></span>
+      <span class="text-xs font-mono tracking-wider text-body uppercase">Fast, Safe & Free Conversion</span>
+    </div>
+
+    <!-- Title -->
+    <h1 class="display-xl text-primary max-w-[800px] mb-4 text-4xl md:text-5xl lg:text-6xl tracking-tight leading-none">
+      Convert YouTube to MP3 and MP4.
+    </h1>
+
+    <!-- Description -->
+    <p class="text-base md:text-lg text-body max-w-[600px] mb-10 leading-relaxed font-normal">
+      High-quality media conversions in seconds. No software installation, no user registration. Zero hassle.
+    </p>
+
+    <!-- Converter Widget Component -->
+    <ConverterWidget />
+
+    <!-- Supporting Trust Signals -->
+    <div class="mt-8 flex flex-wrap justify-center gap-x-8 gap-y-3 text-xs font-mono text-mute select-none">
+      <div class="flex items-center space-x-1.5">
+        <svg class="w-4 h-4 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+        </svg>
+        <span>No Software Required</span>
+      </div>
+      <div class="flex items-center space-x-1.5">
+        <svg class="w-4 h-4 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+        </svg>
+        <span>100% Safe & Secure</span>
+      </div>
+      <div class="flex items-center space-x-1.5">
+        <svg class="w-4 h-4 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+        <span>Unlimited Conversions</span>
+      </div>
+    </div>
+  </div>
+</section>

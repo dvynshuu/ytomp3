@@ -1,0 +1,28 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Navbar from '../components/Navbar.astro';
+import Hero from '../components/Hero.astro';
+import Features from '../components/Features.astro';
+import HowItWorks from '../components/HowItWorks.astro';
+import SupportedFormats from '../components/SupportedFormats.astro';
+import FAQ from '../components/FAQ.astro';
+import Footer from '../components/Footer.astro';
+---
+
+<Layout 
+  title="ytomp3 — Free YouTube to MP3 & MP4 Converter"
+  description="Convert and download YouTube videos to high-quality MP3 or MP4 format for free. Fast, safe, and works directly in your browser. No registration required."
+  canonicalUrl="https://rytomp3.in"
+>
+  <Navbar />
+  
+  <main id="main-content" class="flex-grow">
+    <Hero />
+    <Features />
+    <HowItWorks />
+    <SupportedFormats />
+    <FAQ />
+  </main>
+  
+  <Footer />
+</Layout>

@@ -1,0 +1,133 @@
+---
+const faqs = [
+  {
+    question: "What is ytomp3 and how does it work?",
+    answer: "ytomp3 (rytomp3.in) is a free, high-performance web-based media utility that allows you to extract audio or video tracks from YouTube links and pack them into downloadable MP3 or MP4 files. The conversion runs entirely on our high-speed cloud nodes so your local processor and battery are unaffected."
+  },
+  {
+    question: "Is this service completely free to use?",
+    answer: "Yes, our service is 100% free with no hidden charges, premium paywalls, or feature caps. You can convert as many videos as you'd like without paying a single rupee."
+  },
+  {
+    question: "Do I need to sign up or install any software?",
+    answer: "No registration, email validation, or software installations are required. The entire conversion process runs directly inside your web browser on desktop, tablet, and mobile device platforms."
+  },
+  {
+    question: "What audio bitrates and video resolutions are supported?",
+    answer: "For audio (MP3), we support 128kbps, 192kbps, 256kbps, and 320kbps. For video (MP4), we support 360p, 480p, 720p (HD), and 1080p (Full HD). Standard default options are optimized for fast download sizes."
+  },
+  {
+    question: "What specific YouTube link formats are supported?",
+    answer: "We support all common YouTube URL formats including desktop links (youtube.com/watch?v=...), mobile short-links (youtu.be/...), shorts (youtube.com/shorts/...), embed links, and live streams (provided the live broadcast has ended)."
+  },
+  {
+    question: "Is it safe to download files from rytomp3.in?",
+    answer: "Yes, rytomp3.in is completely safe. Unlike other converters, we do not require Java or Flash plugins, do not bundle malware wrappers in files, and do not serve aggressive popup ads. Your downloads are direct clean MP3/MP4 streams."
+  },
+  {
+    question: "Are there limitations on video length?",
+    answer: "Audio (MP3) extractions support videos up to 240 minutes (4 hours) in length. Video (MP4) extractions support clips up to 60 minutes (1 hour) in length to prevent server timeout."
+  }
+];
+---
+<section class="py-20 bg-canvas-soft-2 border-b border-hairline" id="faq" aria-label="Frequently Asked Questions">
+  <div class="max-w-[800px] mx-auto px-6">
+    <!-- Header -->
+    <div class="text-center max-w-[600px] mx-auto mb-16">
+      <p class="text-xs font-mono uppercase tracking-wider text-[#eb367f] mb-3">Questions & Answers</p>
+      <h2 class="display-lg text-primary text-3xl md:text-4xl mb-4">
+        Frequently asked questions.
+      </h2>
+      <p class="text-sm text-body leading-relaxed">
+        Everything you need to know about rytomp3.in's online conversion cloud utility.
+      </p>
+    </div>
+
+    <!-- FAQ Accordion Container -->
+    <div class="space-y-3" role="list">
+      {faqs.map((faq, index) => (
+        <div 
+          class="bg-canvas border border-hairline rounded-md overflow-hidden transition-all duration-200 shadow-level-1 hover:shadow-level-2"
+          role="listitem"
+        >
+          <!-- Trigger Header -->
+          <button 
+            type="button"
+            class="w-full flex items-center justify-between p-5 text-left font-medium text-primary select-none cursor-pointer focus:outline-none focus:bg-canvas-soft transition-colors"
+            data-faq-toggle={`faq-content-${index}`}
+            aria-expanded="false"
+            aria-controls={`faq-content-${index}`}
+          >
+            <span class="text-sm md:text-base leading-relaxed pr-4">{faq.question}</span>
+            <svg 
+              class="w-4 h-4 text-mute transform transition-transform duration-200 flex-shrink-0" 
+              fill="none" 
+              viewBox="0 0 24 24" 
+              stroke="currentColor"
+              id={`faq-icon-${index}`}
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          
+          <!-- Content Drawer -->
+          <div 
+            id={`faq-content-${index}`}
+            class="max-h-0 overflow-hidden transition-all duration-300 ease-in-out bg-canvas"
+            aria-hidden="true"
+          >
+            <div class="p-5 pt-0 text-sm text-body leading-relaxed border-t border-hairline/40">
+              {faq.answer}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<script>
+  // Accordion Logic
+  const toggles = document.querySelectorAll('[data-faq-toggle]');
+  
+  toggles.forEach(toggle => {
+    toggle.addEventListener('click', () => {
+      const contentId = toggle.getAttribute('data-faq-toggle');
+      const content = document.getElementById(contentId!);
+      const icon = toggle.querySelector('svg');
+      const isExpanded = toggle.getAttribute('aria-expanded') === 'true';
+
+      // Close all other drawers (Vercel style clean accordion)
+      toggles.forEach(otherToggle => {
+        if (otherToggle !== toggle) {
+          otherToggle.setAttribute('aria-expanded', 'false');
+          const otherContentId = otherToggle.getAttribute('data-faq-toggle');
+          const otherContent = document.getElementById(otherContentId!);
+          const otherIcon = otherToggle.querySelector('svg');
+          if (otherContent) {
+            otherContent.style.maxHeight = '0px';
+            otherContent.setAttribute('aria-hidden', 'true');
+          }
+          otherIcon?.classList.remove('rotate-180');
+        }
+      });
+
+      // Toggle current
+      if (isExpanded) {
+        toggle.setAttribute('aria-expanded', 'false');
+        if (content) {
+          content.style.maxHeight = '0px';
+          content.setAttribute('aria-hidden', 'true');
+        }
+        icon?.classList.remove('rotate-180');
+      } else {
+        toggle.setAttribute('aria-expanded', 'true');
+        if (content) {
+          content.style.maxHeight = content.scrollHeight + 'px';
+          content.setAttribute('aria-hidden', 'false');
+        }
+        icon?.classList.add('rotate-180');
+      }
+    });
+  });
+</script>

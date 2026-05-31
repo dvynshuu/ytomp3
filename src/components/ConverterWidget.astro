@@ -1,0 +1,398 @@
+---
+---
+<div class="w-full max-w-[580px] bg-canvas border border-hairline rounded-lg shadow-level-4 p-6 md:p-8" id="converter-card">
+  <!-- Tabs (MP3 / MP4) -->
+  <div class="flex p-1 bg-canvas-soft-2 rounded-pill-sm border border-hairline mb-6" role="tablist">
+    <button 
+      type="button" 
+      class="flex-1 py-2 text-sm font-medium rounded-pill-sm transition-all duration-200 cursor-pointer bg-canvas text-primary shadow-level-2"
+      id="tab-mp3"
+      role="tab"
+      aria-selected="true"
+    >
+      MP3 (Audio)
+    </button>
+    <button 
+      type="button" 
+      class="flex-1 py-2 text-sm font-medium rounded-pill-sm transition-all duration-200 cursor-pointer text-body hover:text-primary"
+      id="tab-mp4"
+      role="tab"
+      aria-selected="false"
+    >
+      MP4 (Video)
+    </button>
+  </div>
+
+  <!-- STATE: IDLE -->
+  <div id="state-idle" class="space-y-5">
+    <div class="space-y-2">
+      <label for="youtube-url" class="text-xs font-mono uppercase tracking-wider text-body">Paste YouTube Link</label>
+      <div class="relative">
+        <input 
+          id="youtube-url" 
+          type="url" 
+          placeholder="youtube.com/watch?v=..." 
+          class="w-full h-12 bg-canvas text-ink border border-hairline-strong/40 rounded-sm px-4 pr-10 text-sm focus:outline-none focus:border-primary transition-colors placeholder:text-mute focus:ring-1 focus:ring-primary"
+          required
+          autofocus
+        />
+        <svg class="absolute right-3 top-3.5 w-5 h-5 text-mute" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+        </svg>
+      </div>
+    </div>
+
+    <!-- Quality Selection -->
+    <div class="space-y-2">
+      <label for="quality-select" class="text-xs font-mono uppercase tracking-wider text-body">Select Quality</label>
+      <div class="relative">
+        <select 
+          id="quality-select" 
+          class="w-full h-12 bg-canvas text-ink border border-hairline-strong/40 rounded-sm px-4 text-sm focus:outline-none focus:border-primary transition-colors appearance-none cursor-pointer focus:ring-1 focus:ring-primary"
+        >
+          <!-- MP3 Options (Default) -->
+          <option value="320">MP3 — 320 kbps (Ultra High Quality)</option>
+          <option value="256">MP3 — 256 kbps (High Quality)</option>
+          <option value="192" selected>MP3 — 192 kbps (Standard Quality)</option>
+          <option value="128">MP3 — 128 kbps (Econ Quality)</option>
+        </select>
+        <svg class="absolute right-3 top-4 w-4 h-4 text-mute pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+        </svg>
+      </div>
+    </div>
+
+    <button 
+      type="button" 
+      id="btn-convert"
+      class="w-full h-12 bg-primary hover:bg-opacity-90 text-on-primary font-medium rounded-pill text-sm transition-all duration-200 cursor-pointer shadow-level-3 select-none flex items-center justify-center space-x-2"
+    >
+      <span>Convert Link</span>
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+      </svg>
+    </button>
+  </div>
+
+  <!-- STATE: CONVERTING -->
+  <div id="state-converting" class="hidden space-y-6 py-4">
+    <!-- Spinner and status -->
+    <div class="flex items-center space-x-4">
+      <div class="w-10 h-10 rounded-full border-[3px] border-hairline border-t-primary animate-spin" id="converter-spinner"></div>
+      <div class="space-y-0.5">
+        <h4 class="text-sm font-semibold text-primary" id="status-title">Processing YouTube video</h4>
+        <p class="text-xs text-mute" id="status-sub">Connecting to stream server...</p>
+      </div>
+    </div>
+
+    <!-- Progress bar -->
+    <div class="space-y-2">
+      <div class="w-full h-1.5 bg-canvas-soft-2 rounded-full overflow-hidden border border-hairline">
+        <div class="h-full bg-primary transition-all duration-300 ease-out" id="progress-bar" style="width: 0%"></div>
+      </div>
+      <div class="flex justify-between text-[11px] font-mono text-mute">
+        <span id="progress-percent">0%</span>
+        <span id="progress-eta">ETA: Calculating...</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATE: DONE -->
+  <div id="state-done" class="hidden space-y-6">
+    <!-- Video Preview Card -->
+    <div class="flex flex-col sm:flex-row items-start sm:items-center space-y-4 sm:space-y-0 sm:space-x-4 p-4 bg-canvas-soft rounded-md border border-hairline">
+      <!-- Thumbnail with mock image loader/placeholder -->
+      <div class="relative w-full sm:w-[120px] aspect-video bg-canvas-soft-2 rounded-sm overflow-hidden flex-shrink-0 border border-hairline flex items-center justify-center">
+        <img id="done-thumb" src="" alt="Video thumbnail" class="w-full h-full object-cover hidden" />
+        <!-- Placeholder music note or video icon -->
+        <div id="done-thumb-placeholder" class="text-mute flex flex-col items-center justify-center">
+          <svg class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+          </svg>
+        </div>
+      </div>
+      <div class="space-y-1 min-w-0 flex-1">
+        <h4 class="text-sm font-semibold text-primary truncate" id="done-title">Sample YouTube Video Title</h4>
+        <p class="text-xs text-body" id="done-duration">Duration: --:--</p>
+        <p class="text-xs font-mono text-mute" id="done-info">Format: MP3 • 192kbps • -- MB</p>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="flex flex-col sm:flex-row gap-3">
+      <a 
+        id="btn-download" 
+        href="#" 
+        download
+        class="flex-1 h-12 bg-primary hover:bg-opacity-90 text-on-primary font-medium rounded-pill text-sm transition-all duration-200 cursor-pointer shadow-level-3 select-none flex items-center justify-center space-x-2"
+      >
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+        </svg>
+        <span>Download File</span>
+      </a>
+      <button 
+        type="button" 
+        id="btn-convert-another"
+        class="flex-1 h-12 bg-canvas hover:bg-canvas-soft border border-hairline text-primary font-medium rounded-pill text-sm transition-all duration-200 cursor-pointer shadow-level-2 select-none"
+      >
+        Convert Another
+      </button>
+    </div>
+  </div>
+
+  <!-- STATE: ERROR -->
+  <div id="state-error" class="hidden space-y-5 text-center py-4">
+    <div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-error-soft text-error mb-2">
+      <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+      </svg>
+    </div>
+    <div class="space-y-1">
+      <h4 class="text-sm font-semibold text-error" id="error-title">Conversion Failed</h4>
+      <p class="text-xs text-body" id="error-message">The YouTube link you entered is invalid or inaccessible.</p>
+    </div>
+    <button 
+      type="button" 
+      id="btn-error-retry"
+      class="w-full h-12 bg-primary hover:bg-opacity-90 text-on-primary font-medium rounded-pill text-sm transition-all duration-200 cursor-pointer shadow-level-3"
+    >
+      Try Again
+    </button>
+  </div>
+</div>
+
+<script>
+  // UI selectors
+  const tabMp3 = document.getElementById('tab-mp3');
+  const tabMp4 = document.getElementById('tab-mp4');
+  const qualitySelect = document.getElementById('quality-select') as HTMLSelectElement;
+  
+  const stateIdle = document.getElementById('state-idle');
+  const stateConverting = document.getElementById('state-converting');
+  const stateDone = document.getElementById('state-done');
+  const stateError = document.getElementById('state-error');
+
+  const inputUrl = document.getElementById('youtube-url') as HTMLInputElement;
+  const btnConvert = document.getElementById('btn-convert');
+  const btnConvertAnother = document.getElementById('btn-convert-another');
+  const btnErrorRetry = document.getElementById('btn-error-retry');
+  const btnDownload = document.getElementById('btn-download') as HTMLAnchorElement;
+
+  const progressBar = document.getElementById('progress-bar');
+  const progressPercent = document.getElementById('progress-percent');
+  const progressEta = document.getElementById('progress-eta');
+  const statusTitle = document.getElementById('status-title');
+  const statusSub = document.getElementById('status-sub');
+
+  const doneThumb = document.getElementById('done-thumb') as HTMLImageElement;
+  const doneThumbPlaceholder = document.getElementById('done-thumb-placeholder');
+  const doneTitle = document.getElementById('done-title');
+  const doneDuration = document.getElementById('done-duration');
+  const doneInfo = document.getElementById('done-info');
+  const errorMessage = document.getElementById('error-message');
+
+  let currentFormat = 'mp3'; // 'mp3' or 'mp4'
+
+  // Pre-fill URL from query parameter if present
+  window.addEventListener('DOMContentLoaded', () => {
+    const params = new URLSearchParams(window.location.search);
+    const urlParam = params.get('url');
+    if (urlParam && inputUrl) {
+      inputUrl.value = decodeURIComponent(urlParam);
+    }
+  });
+
+  // Toggle format tabs
+  tabMp3?.addEventListener('click', () => {
+    if (currentFormat === 'mp3') return;
+    currentFormat = 'mp3';
+    
+    // UI update tabs
+    tabMp3.classList.add('bg-canvas', 'text-primary', 'shadow-level-2');
+    tabMp3.classList.remove('text-body', 'hover:text-primary');
+    tabMp4?.classList.remove('bg-canvas', 'text-primary', 'shadow-level-2');
+    tabMp4?.classList.add('text-body', 'hover:text-primary');
+    
+    // Update Quality Dropdown options
+    if (qualitySelect) {
+      qualitySelect.innerHTML = `
+        <option value="320">MP3 — 320 kbps (Ultra High Quality)</option>
+        <option value="256">MP3 — 256 kbps (High Quality)</option>
+        <option value="192" selected>MP3 — 192 kbps (Standard Quality)</option>
+        <option value="128">MP3 — 128 kbps (Econ Quality)</option>
+      `;
+    }
+  });
+
+  tabMp4?.addEventListener('click', () => {
+    if (currentFormat === 'mp4') return;
+    currentFormat = 'mp4';
+    
+    // UI update tabs
+    tabMp4.classList.add('bg-canvas', 'text-primary', 'shadow-level-2');
+    tabMp4.classList.remove('text-body', 'hover:text-primary');
+    tabMp3?.classList.remove('bg-canvas', 'text-primary', 'shadow-level-2');
+    tabMp3?.classList.add('text-body', 'hover:text-primary');
+    
+    // Update Quality Dropdown options
+    if (qualitySelect) {
+      qualitySelect.innerHTML = `
+        <option value="1080">MP4 — 1080p (Full HD Video)</option>
+        <option value="720" selected>MP4 — 720p (HD Video)</option>
+        <option value="480">MP4 — 480p (Medium Quality)</option>
+        <option value="360">MP4 — 360p (Low Quality)</option>
+      `;
+    }
+  });
+
+  // State transitions
+  function showState(state: string) {
+    stateIdle?.classList.add('hidden');
+    stateConverting?.classList.add('hidden');
+    stateDone?.classList.add('hidden');
+    stateError?.classList.add('hidden');
+
+    if (state === 'idle') stateIdle?.classList.remove('hidden');
+    else if (state === 'converting') stateConverting?.classList.remove('hidden');
+    else if (state === 'done') stateDone?.classList.remove('hidden');
+    else if (state === 'error') stateError?.classList.remove('hidden');
+  }
+
+  // Parse Youtube Video ID
+  function getYouTubeID(url: string) {
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+    const match = url.match(regExp);
+    return (match && match[2].length === 11) ? match[2] : null;
+  }
+
+  // Conversion process
+  btnConvert?.addEventListener('click', () => {
+    const url = inputUrl?.value.trim();
+    if (!url) {
+      if (inputUrl) inputUrl.reportValidity();
+      return;
+    }
+
+    const videoId = getYouTubeID(url);
+    
+    // If not a valid youtube url
+    if (!url.includes('youtube.com') && !url.includes('youtu.be') && !url.includes('y2u.be')) {
+      if (errorMessage) {
+        errorMessage.innerText = "Please enter a valid YouTube video URL. We currently only support YouTube links.";
+      }
+      showState('error');
+      return;
+    }
+
+    // Go to converting state
+    showState('converting');
+    simulateConversion(videoId, url);
+  });
+
+  // Simulate conversion progress
+  function simulateConversion(videoId: string | null, originalUrl: string) {
+    let progress = 0;
+    
+    // Mock metadata
+    const titles = [
+      "Lofi Hip Hop Radio - Beats to Relax/Study to",
+      "Vercel Ship 2025 Keynote Presentation",
+      "Astro 6.0: The Future of Web Frameworks",
+      "Official Music Video - Summer Vibe Mix",
+      "How to Build a Premium SaaS Landing Page"
+    ];
+    const mockTitle = videoId 
+      ? `YouTube Video (${videoId})` 
+      : titles[Math.floor(Math.random() * titles.length)];
+
+    const selectedQuality = qualitySelect?.value || '192';
+    const isAudio = currentFormat === 'mp3';
+    
+    let sizeMB = 0;
+    let qualityLabel = '';
+    
+    if (isAudio) {
+      const bitrates: Record<string, number> = { '320': 7.5, '256': 6.0, '192': 4.5, '128': 3.0 };
+      sizeMB = bitrates[selectedQuality] || 4.5;
+      qualityLabel = `${selectedQuality}kbps`;
+    } else {
+      const resolutions: Record<string, number> = { '1080': 75.0, '720': 45.0, '480': 25.0, '360': 15.0 };
+      sizeMB = resolutions[selectedQuality] || 45.0;
+      qualityLabel = `${selectedQuality}p`;
+    }
+
+    const interval = setInterval(() => {
+      progress += Math.floor(Math.random() * 15) + 5;
+      if (progress > 100) progress = 100;
+
+      // Update progress bar
+      if (progressBar) progressBar.style.width = `${progress}%`;
+      if (progressPercent) progressPercent.innerText = `${progress}%`;
+
+      // Update ETA
+      if (progressEta) {
+        const remaining = Math.round((100 - progress) * 0.1);
+        progressEta.innerText = remaining > 0 ? `ETA: ~${remaining}s` : "Finalizing...";
+      }
+
+      // Update status messages
+      if (progress < 25) {
+        if (statusTitle) statusTitle.innerText = "Extracting video metadata";
+        if (statusSub) statusSub.innerText = "Connecting to YouTube stream server...";
+      } else if (progress < 60) {
+        if (statusTitle) statusTitle.innerText = isAudio ? "Downloading audio track" : "Downloading video stream";
+        if (statusSub) statusSub.innerText = `Fetching fragments: ${progress}% completed...`;
+      } else if (progress < 85) {
+        if (statusTitle) statusTitle.innerText = isAudio ? "Converting to MP3 format" : "Encoding video frames";
+        if (statusSub) statusSub.innerText = `Re-packaging media containers: ${qualityLabel}`;
+      } else {
+        if (statusTitle) statusTitle.innerText = "Generating download links";
+        if (statusSub) statusSub.innerText = "Writing tags and packaging files...";
+      }
+
+      // Complete
+      if (progress === 100) {
+        clearInterval(interval);
+        
+        // Setup done state UI
+        if (doneTitle) doneTitle.innerText = mockTitle;
+        if (doneDuration) doneDuration.innerText = "Duration: 04:12";
+        if (doneInfo) doneInfo.innerText = `Format: ${currentFormat.toUpperCase()} • ${qualityLabel} • ~${sizeMB.toFixed(1)} MB`;
+
+        // Mock thumbnail
+        if (videoId && doneThumb) {
+          doneThumb.src = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+          doneThumb.classList.remove('hidden');
+          doneThumbPlaceholder?.classList.add('hidden');
+        } else if (doneThumb) {
+          doneThumb.classList.add('hidden');
+          doneThumbPlaceholder?.classList.remove('hidden');
+        }
+
+        // Setup mock downloadable file
+        if (btnDownload) {
+          btnDownload.href = `https://rytomp3.in/downloads/mock-file.${currentFormat}`;
+          btnDownload.addEventListener('click', (e) => {
+            // Since it's a mock download on a static app, we prevent default link click and alert user
+            e.preventDefault();
+            alert(`Simulated Download initiated!\nFile: "${mockTitle}.${currentFormat}"\nQuality: ${qualityLabel}\nSize: ~${sizeMB.toFixed(1)}MB\n\n(This is a premium frontend mockup. A backend conversion pipeline would deliver the file here.)`);
+          });
+        }
+
+        showState('done');
+      }
+    }, 400);
+  }
+
+  // Reset to idle
+  btnConvertAnother?.addEventListener('click', () => {
+    if (inputUrl) inputUrl.value = '';
+    if (progressBar) progressBar.style.width = '0%';
+    showState('idle');
+  });
+
+  btnErrorRetry?.addEventListener('click', () => {
+    showState('idle');
+  });
+</script>

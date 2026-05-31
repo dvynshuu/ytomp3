@@ -1,0 +1,72 @@
+---
+import '../styles/app.css';
+
+interface Props {
+	title?: string;
+	description?: string;
+	canonicalUrl?: string;
+}
+
+const {
+	title = "ytomp3 — Free YouTube to MP3 & MP4 Converter",
+	description = "Convert and download YouTube videos to high-quality MP3 or MP4 for free. No registration or software required. Safe, fast, and optimized for mobile.",
+	canonicalUrl = "https://rytomp3.in"
+} = Astro.props;
+
+// JSON-LD structured data for the website
+const schemaMarkup = {
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "ytomp3",
+  "url": "https://rytomp3.in",
+  "description": description,
+  "applicationCategory": "MultimediaApplication",
+  "operatingSystem": "All",
+  "browserRequirements": "Requires HTML5 compatible browser",
+  "offers": {
+    "@type": "Offer",
+    "price": "0.00",
+    "priceCurrency": "USD"
+  }
+};
+---
+
+<!doctype html>
+<html lang="en" class="scroll-smooth">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<link rel="canonical" href={canonicalUrl} />
+		<meta name="generator" content={Astro.generator} />
+		
+		<!-- Primary SEO Meta Tags -->
+		<title>{title}</title>
+		<meta name="title" content={title} />
+		<meta name="description" content={description} />
+
+		<!-- Open Graph / Facebook -->
+		<meta property="og:type" content="website" />
+		<meta property="og:url" content={canonicalUrl} />
+		<meta property="og:title" content={title} />
+		<meta property="og:description" content={description} />
+		<meta property="og:image" content="https://rytomp3.in/og-image.png" />
+
+		<!-- Twitter -->
+		<meta property="twitter:card" content="summary_large_image" />
+		<meta property="twitter:url" content={canonicalUrl} />
+		<meta property="twitter:title" content={title} />
+		<meta property="twitter:description" content={description} />
+		<meta property="twitter:image" content="https://rytomp3.in/og-image.png" />
+
+		<!-- Preconnect to Google Fonts -->
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+		<!-- JSON-LD Schema -->
+		<script type="application/ld+json" set:html={JSON.stringify(schemaMarkup)} />
+	</head>
+	<body class="bg-canvas-soft text-ink selection:bg-primary selection:text-on-primary min-h-screen flex flex-col">
+		<slot />
+	</body>
+</html>

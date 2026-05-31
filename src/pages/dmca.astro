@@ -1,0 +1,88 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Navbar from '../components/Navbar.astro';
+import Footer from '../components/Footer.astro';
+---
+
+<Layout 
+  title="DMCA & Copyright Claims — ytomp3 Converter"
+  description="DMCA and Copyright Claims policy for rytomp3.in. Learn how to submit copyright infringement notices."
+  canonicalUrl="https://rytomp3.in/dmca"
+>
+  <Navbar />
+  
+  <main class="flex-grow">
+    <!-- Header -->
+    <section class="py-12 bg-canvas border-b border-hairline" aria-label="DMCA Header">
+      <div class="max-w-[800px] mx-auto px-6">
+        <p class="text-xs font-mono uppercase tracking-wider text-mute mb-2">Legal Documents</p>
+        <h1 class="display-lg text-primary text-4xl mb-2">DMCA & Copyright Claims.</h1>
+        <p class="text-xs font-mono text-mute">Last Updated: May 31, 2026</p>
+      </div>
+    </section>
+
+    <!-- Content -->
+    <section class="py-16 bg-canvas-soft" aria-label="DMCA Content">
+      <div class="max-w-[800px] mx-auto px-6">
+        <div class="prose prose-sm max-w-none text-body space-y-6 text-sm leading-relaxed">
+          <p>
+            At <strong class="text-primary">rytomp3.in</strong>, we respect the intellectual property rights of others. This DMCA and Copyright Claims Policy outlines the procedure for reporting copyright infringement.
+          </p>
+
+          <div class="space-y-3">
+            <h2 class="text-base font-semibold text-primary">1. Our Role as a Converter Utility</h2>
+            <p>
+              rytomp3.in operates strictly as a conversion tool. We do not store, host, mirror, index, or archive any media files on our servers. The conversion of online links is performed in real-time memory and delivered directly to the user's browser client. Because we do not host or publish any files, we are technically unable to remove content from servers we do not own or control.
+            </p>
+          </div>
+
+          <div class="space-y-3">
+            <h2 class="text-base font-semibold text-primary">2. Link Blocking (Blacklist Requests)</h2>
+            <p>
+              Although we do not host content, we are committed to respecting copyright owners. We maintain a system that allows copyright holders to block conversions of specific YouTube URLs or video IDs. Once a video ID is added to our blacklist database, no user will be able to convert or download that video through rytomp3.in.
+            </p>
+          </div>
+
+          <div class="space-y-3">
+            <h2 class="text-base font-semibold text-primary">3. Submitting a Notice of Infringement</h2>
+            <p>
+              If you are a copyright owner or authorized agent, and you wish to block the conversion of your copyrighted video on our platform, please submit a written request containing the following:
+            </p>
+            <ul class="list-disc pl-5 space-y-2">
+              <li>
+                <strong>Copyright Ownership Details:</strong> Clear identification of the copyrighted work claimed to have been infringed, or a link to the original work.
+              </li>
+              <li>
+                <strong>YouTube URLs to Block:</strong> The exact YouTube video link(s) or video ID(s) that you wish to block from conversion. General search queries or channel names are not sufficient; we require the literal video IDs.
+              </li>
+              <li>
+                <strong>Contact Information:</strong> Your name, physical address, phone number, and official corporate email address.
+              </li>
+              <li>
+                <strong>Declaration:</strong> A statement that: <i>"I have a good faith belief that the use of the material is not authorized by the copyright owner, its agent, or the law."</i> and <i>"I swear under penalty of perjury that the information in this notification is accurate and that I am the copyright owner or authorized to act on behalf of the owner."</i>
+              </li>
+              <li>
+                <strong>Signature:</strong> A physical or electronic signature of the copyright owner or their authorized agent.
+              </li>
+            </ul>
+          </div>
+
+          <div class="space-y-3">
+            <h2 class="text-base font-semibold text-primary">4. Submission Channel</h2>
+            <p>
+              Please send the notice to our copyright agent at:
+            </p>
+            <p class="font-mono text-primary bg-canvas border border-hairline p-4 rounded-sm inline-block select-all text-xs">
+              dmca@rytomp3.in
+            </p>
+            <p>
+              We aim to process valid takedown/blacklist requests within 24 to 48 hours of receipt. Notices sent from free webmail accounts (e.g., Gmail, Yahoo, Hotmail) without corporate verification or proof of representation may take longer to verify.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+  
+  <Footer />
+</Layout>

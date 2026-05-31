@@ -1,0 +1,97 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Navbar from '../components/Navbar.astro';
+import Footer from '../components/Footer.astro';
+---
+
+<Layout 
+  title="Browser Extension & Add-On — ytomp3 Converter"
+  description="Convert YouTube videos instantly with the ytomp3 browser extension or bookmarklet. Fast, safe, and direct from YouTube."
+  canonicalUrl="https://rytomp3.in/add-on"
+>
+  <Navbar />
+  
+  <main class="flex-grow">
+    <!-- Header -->
+    <section class="py-12 bg-canvas border-b border-hairline" aria-label="Add-On Header">
+      <div class="max-w-[800px] mx-auto px-6">
+        <p class="text-xs font-mono uppercase tracking-wider text-mute mb-2">Browser Integrations</p>
+        <h1 class="display-lg text-primary text-4xl mb-2">Extension & Bookmarklet.</h1>
+        <p class="text-sm text-body leading-relaxed max-w-[600px]">
+          Convert videos directly from YouTube with our browser extensions and bookmarklet tools. Choose the method that best fits your workflow.
+        </p>
+      </div>
+    </section>
+
+    <!-- Content Sections -->
+    <section class="py-16 bg-canvas-soft" aria-label="Integrations Content">
+      <div class="max-w-[800px] mx-auto px-6 space-y-12">
+        
+        <!-- Option 1: Bookmarklet (Easiest, zero-install) -->
+        <div class="bg-canvas border border-hairline rounded-md p-8 shadow-level-3 space-y-6">
+          <div class="flex items-center space-x-3">
+            <span class="w-2.5 h-2.5 bg-[#7928ca] rounded-full"></span>
+            <h2 class="display-sm text-primary">Option 1: The Bookmarklet</h2>
+          </div>
+          
+          <p class="text-sm text-body leading-relaxed">
+            The bookmarklet is a simple shortcut containing a small line of Javascript code. It sits in your browser's bookmark bar. Clicking it while watching any YouTube video instantly loads the video in our converter.
+          </p>
+
+          <div class="bg-canvas-soft-2 border border-hairline p-6 rounded-sm text-center space-y-4">
+            <p class="text-xs font-mono uppercase tracking-wider text-body">Drag this button to your bookmarks bar:</p>
+            
+            <a 
+              href="javascript:(function(){var url=window.location.href;if(url.indexOf('youtube.com/watch')!==-1){window.open('https://rytomp3.in/?url='+encodeURIComponent(url));}else{alert('Drag this to your bookmarks, then click it while watching a YouTube video!');}})();" 
+              class="h-12 inline-flex items-center justify-center px-6 rounded-pill bg-[#7928ca] hover:bg-opacity-95 text-white font-medium text-sm transition-all duration-200 shadow-level-3 select-none cursor-move"
+              id="bookmarklet-drag-btn"
+              onclick="event.preventDefault(); alert('Drag this button into your browser bookmarks bar to install it! (Clicking it directly does not install it)');"
+            >
+              🚀 Convert with ytomp3
+            </a>
+          </div>
+
+          <div class="space-y-3">
+            <h3 class="text-sm font-semibold text-primary">How to install & use:</h3>
+            <ol class="list-decimal pl-5 text-xs text-body space-y-2">
+              <li>Make sure your browser's bookmarks bar is visible (<kbd class="bg-canvas-soft-2 px-1 rounded border border-hairline text-primary">Ctrl+Shift+B</kbd> or <kbd class="bg-canvas-soft-2 px-1 rounded border border-hairline text-primary">Cmd+Shift+B</kbd>).</li>
+              <li>Drag the purple <strong class="text-primary font-medium">Convert with ytomp3</strong> button above and drop it onto your bookmarks bar.</li>
+              <li>Open YouTube and play any video.</li>
+              <li>Click the bookmarklet shortcut in your bookmarks bar. It will open a new tab containing rytomp3.in with the video link pre-filled and ready to convert!</li>
+            </ol>
+          </div>
+        </div>
+
+        <!-- Option 2: Browser Extension (Coming Soon) -->
+        <div class="bg-canvas border border-hairline rounded-md p-8 shadow-level-2 space-y-6 opacity-85">
+          <div class="flex items-center space-x-3">
+            <span class="w-2.5 h-2.5 bg-mute rounded-full"></span>
+            <h2 class="display-sm text-primary">Option 2: Browser Extension (Beta)</h2>
+          </div>
+          
+          <p class="text-sm text-body leading-relaxed">
+            We are currently developing official browser extensions for Google Chrome, Mozilla Firefox, and Microsoft Edge. This will inject a clean "Convert to MP3" button directly under YouTube video players.
+          </p>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div class="border border-hairline p-4 rounded-sm text-center space-y-2 bg-canvas-soft-2">
+              <span class="text-xs font-semibold text-primary">Google Chrome</span>
+              <p class="text-[10px] text-mute">Under Review in Chrome Web Store</p>
+            </div>
+            <div class="border border-hairline p-4 rounded-sm text-center space-y-2 bg-canvas-soft-2">
+              <span class="text-xs font-semibold text-primary">Mozilla Firefox</span>
+              <p class="text-[10px] text-mute">Awaiting Add-on Signing</p>
+            </div>
+            <div class="border border-hairline p-4 rounded-sm text-center space-y-2 bg-canvas-soft-2">
+              <span class="text-xs font-semibold text-primary">Microsoft Edge</span>
+              <p class="text-[10px] text-mute">Development Beta Sandbox</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+  </main>
+  
+  <Footer />
+</Layout>

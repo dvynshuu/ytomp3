@@ -1,0 +1,83 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Navbar from '../components/Navbar.astro';
+import Footer from '../components/Footer.astro';
+---
+
+<Layout 
+  title="Privacy Policy — ytomp3 Converter"
+  description="Privacy Policy for rytomp3.in. Learn how we handle your data during media conversion."
+  canonicalUrl="https://rytomp3.in/privacy-policy"
+>
+  <Navbar />
+  
+  <main class="flex-grow">
+    <!-- Header -->
+    <section class="py-12 bg-canvas border-b border-hairline" aria-label="Privacy Policy Header">
+      <div class="max-w-[800px] mx-auto px-6">
+        <p class="text-xs font-mono uppercase tracking-wider text-mute mb-2">Legal Documents</p>
+        <h1 class="display-lg text-primary text-4xl mb-2">Privacy Policy.</h1>
+        <p class="text-xs font-mono text-mute">Last Updated: May 31, 2026</p>
+      </div>
+    </section>
+
+    <!-- Content -->
+    <section class="py-16 bg-canvas-soft" aria-label="Privacy Policy Content">
+      <div class="max-w-[800px] mx-auto px-6">
+        <div class="prose prose-sm max-w-none text-body space-y-6 text-sm leading-relaxed">
+          <p>
+            At <strong class="text-primary">rytomp3.in</strong> (referred to as "ytomp3", "we", "us", or "our"), user privacy is of utmost importance. This Privacy Policy describes how we process, or rather do not collect, user data when using our YouTube converter website.
+          </p>
+
+          <div class="space-y-3">
+            <h2 class="text-base font-semibold text-primary">1. Data Collection and Retention</h2>
+            <p>
+              We operate a strictly zero-logs conversion service. 
+            </p>
+            <ul class="list-disc pl-5 space-y-1">
+              <li><strong>No Personal Information:</strong> We do not require registration, email validation, or username creation to use our service. We do not collect or request any personal identification details.</li>
+              <li><strong>No Conversion Logs:</strong> The links you submit for conversion are processed in real-time. Once the audio or video file is compiled and sent to your device, the link and file information are deleted from our cache. We do not log which videos are converted or who downloaded them.</li>
+            </ul>
+          </div>
+
+          <div class="space-y-3">
+            <h2 class="text-base font-semibold text-primary">2. Server Log Data</h2>
+            <p>
+              Like most online utilities, our web servers collect standard diagnostic log data automatically. This includes your IP address, browser type, referring pages, OS type, and timestamp. This data is collected solely for service security, rate limiting to prevent DDoS attacks, and overall system optimization. It is never linked to personal profiles and is auto-deleted after 14 days.
+            </p>
+          </div>
+
+          <div class="space-y-3">
+            <h2 class="text-base font-semibold text-primary">3. Cookies and Tracking</h2>
+            <p>
+              We use cookies to save your default format preferences (e.g., whether you preferred MP3 or MP4 on your last visit). Third-party advertising networks that serve ads on our site may also place cookies to show relevant ads. You can disable cookies at any time inside your web browser configuration settings.
+            </p>
+          </div>
+
+          <div class="space-y-3">
+            <h2 class="text-base font-semibold text-primary">4. Data Security</h2>
+            <p>
+              We run all network traffic over HTTPS (SSL/TLS) to ensure that your connections to rytomp3.in are encrypted and safe from interception. We run regular security audits to keep our cloud conversion boxes clean and free of vulnerabilities.
+            </p>
+          </div>
+
+          <div class="space-y-3">
+            <h2 class="text-base font-semibold text-primary">5. Changes to this Policy</h2>
+            <p>
+              We may update this Privacy Policy periodically. Any amendments will be reflected on this page with an updated timestamp.
+            </p>
+          </div>
+
+          <div class="space-y-3">
+            <h2 class="text-base font-semibold text-primary">6. Contact Information</h2>
+            <p>
+              If you have questions regarding this policy or the privacy practices of rytomp3.in, feel free to contact us at <a href="mailto:support@rytomp3.in" class="text-link hover:underline font-mono">support@rytomp3.in</a>.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+  
+  <Footer />
+</Layout>

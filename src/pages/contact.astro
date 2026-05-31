@@ -1,0 +1,169 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Navbar from '../components/Navbar.astro';
+import Footer from '../components/Footer.astro';
+---
+
+<Layout 
+  title="Contact Us — ytomp3 Converter"
+  description="Contact the ytomp3 team for support, feature requests, or business inquiries."
+  canonicalUrl="https://rytomp3.in/contact"
+>
+  <Navbar />
+  
+  <main class="flex-grow">
+    <!-- Header -->
+    <section class="py-12 bg-canvas border-b border-hairline" aria-label="Contact Header">
+      <div class="max-w-[800px] mx-auto px-6">
+        <p class="text-xs font-mono uppercase tracking-wider text-mute mb-2">Get in Touch</p>
+        <h1 class="display-lg text-primary text-4xl mb-2">Contact Us.</h1>
+        <p class="text-sm text-body leading-relaxed max-w-[600px]">
+          Have questions, found a bug, or want to submit feedback? Send us a message below and we'll reply as soon as possible.
+        </p>
+      </div>
+    </section>
+
+    <!-- Form and details grid -->
+    <section class="py-16 bg-canvas-soft" aria-label="Contact Form and Info">
+      <div class="max-w-[800px] mx-auto px-6 grid grid-cols-1 md:grid-cols-3 gap-8">
+        <!-- Contact Form Column -->
+        <div class="md:col-span-2 bg-canvas border border-hairline rounded-md p-6 shadow-level-3">
+          <form id="contact-form" class="space-y-5" autocomplete="off">
+            <!-- Name -->
+            <div class="space-y-2">
+              <label for="contact-name" class="text-xs font-mono uppercase tracking-wider text-body">Your Name</label>
+              <input 
+                id="contact-name" 
+                type="text" 
+                placeholder="e.g., John Doe" 
+                class="w-full h-10 bg-canvas text-ink border border-hairline-strong/40 rounded-sm px-4 text-sm focus:outline-none focus:border-primary transition-colors focus:ring-1 focus:ring-primary"
+                required
+              />
+            </div>
+
+            <!-- Email -->
+            <div class="space-y-2">
+              <label for="contact-email" class="text-xs font-mono uppercase tracking-wider text-body">Email Address</label>
+              <input 
+                id="contact-email" 
+                type="email" 
+                placeholder="john@example.com" 
+                class="w-full h-10 bg-canvas text-ink border border-hairline-strong/40 rounded-sm px-4 text-sm focus:outline-none focus:border-primary transition-colors focus:ring-1 focus:ring-primary"
+                required
+              />
+            </div>
+
+            <!-- Subject -->
+            <div class="space-y-2">
+              <label for="contact-subject" class="text-xs font-mono uppercase tracking-wider text-body">Subject</label>
+              <div class="relative">
+                <select 
+                  id="contact-subject" 
+                  class="w-full h-10 bg-canvas text-ink border border-hairline-strong/40 rounded-sm px-4 text-sm focus:outline-none focus:border-primary transition-colors appearance-none cursor-pointer focus:ring-1 focus:ring-primary"
+                >
+                  <option value="general" selected>General Support</option>
+                  <option value="bug">Report a Bug / Error</option>
+                  <option value="dmca">Copyright / Blacklist Claim</option>
+                  <option value="feedback">Feature Request / Feedback</option>
+                </select>
+                <svg class="absolute right-3 top-3 w-4 h-4 text-mute pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </div>
+
+            <!-- Message -->
+            <div class="space-y-2">
+              <label for="contact-message" class="text-xs font-mono uppercase tracking-wider text-body">Your Message</label>
+              <textarea 
+                id="contact-message" 
+                rows="5"
+                placeholder="Detail your request..." 
+                class="w-full bg-canvas text-ink border border-hairline-strong/40 rounded-sm p-4 text-sm focus:outline-none focus:border-primary transition-colors focus:ring-1 focus:ring-primary"
+                required
+              ></textarea>
+            </div>
+
+            <!-- Submit Button -->
+            <button 
+              type="submit" 
+              class="w-full h-10 bg-primary hover:bg-opacity-90 text-on-primary font-medium rounded-pill text-xs transition-all duration-200 cursor-pointer shadow-level-2 select-none flex items-center justify-center space-x-2"
+            >
+              <span>Send Message</span>
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+              </svg>
+            </button>
+          </form>
+
+          <!-- Success Message State -->
+          <div id="contact-success" class="hidden text-center py-8 space-y-4">
+            <div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-success/15 text-success">
+              <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <div class="space-y-1">
+              <h3 class="text-sm font-semibold text-primary">Message Sent.</h3>
+              <p class="text-xs text-body leading-relaxed max-w-[320px] mx-auto">
+                Thank you for contacting us! We've received your request and will reach out to you within 24 hours.
+              </p>
+            </div>
+            <button 
+              type="button" 
+              id="btn-contact-reset"
+              class="h-8 inline-flex items-center justify-center px-4 rounded-pill border border-hairline text-xs text-primary font-medium bg-canvas hover:bg-canvas-soft transition-colors shadow-level-2 cursor-pointer"
+            >
+              Send Another Message
+            </button>
+          </div>
+        </div>
+
+        <!-- Info Column -->
+        <div class="space-y-6">
+          <div class="bg-canvas border border-hairline rounded-md p-6 shadow-level-2 space-y-4">
+            <h3 class="text-xs font-mono uppercase tracking-wider text-primary font-semibold">Direct Email</h3>
+            <p class="text-xs text-body leading-relaxed">
+              If you prefer to bypass forms, you can contact our help desk directly at our support email address.
+            </p>
+            <p class="font-mono text-primary select-all text-xs font-medium bg-canvas-soft-2 p-2.5 rounded border border-hairline">
+              support@rytomp3.in
+            </p>
+          </div>
+
+          <div class="bg-canvas border border-hairline rounded-md p-6 shadow-level-2 space-y-4">
+            <h3 class="text-xs font-mono uppercase tracking-wider text-primary font-semibold">Conversion Abuse</h3>
+            <p class="text-xs text-body leading-relaxed">
+              To request a YouTube video ID or channel block due to copyright infringement, select the <strong class="text-primary font-medium">Copyright / Blacklist Claim</strong> option or write directly to:
+            </p>
+            <p class="font-mono text-primary select-all text-xs font-medium bg-canvas-soft-2 p-2.5 rounded border border-hairline">
+              dmca@rytomp3.in
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+  
+  <Footer />
+</Layout>
+
+<script>
+  const form = document.getElementById('contact-form') as HTMLFormElement;
+  const successState = document.getElementById('contact-success');
+  const resetBtn = document.getElementById('btn-contact-reset');
+
+  form?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (form.checkValidity()) {
+      form.classList.add('hidden');
+      successState?.classList.remove('hidden');
+    }
+  });
+
+  resetBtn?.addEventListener('click', () => {
+    form.reset();
+    successState?.classList.add('hidden');
+    form.classList.remove('hidden');
+  });
+</script>

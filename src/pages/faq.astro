@@ -1,0 +1,69 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Navbar from '../components/Navbar.astro';
+import Footer from '../components/Footer.astro';
+import FAQ from '../components/FAQ.astro';
+---
+
+<Layout 
+  title="FAQ & Support — ytomp3 Converter"
+  description="Frequently Asked Questions and troubleshooting guide for converting YouTube videos on rytomp3.in. Find solutions to common problems."
+  canonicalUrl="https://rytomp3.in/faq"
+>
+  <Navbar />
+  
+  <main class="flex-grow">
+    <!-- Intro Hero for FAQ Page -->
+    <section class="py-12 bg-canvas border-b border-hairline relative overflow-hidden" aria-label="FAQ Header">
+      <div class="max-w-[1200px] mx-auto px-6 flex flex-col items-center text-center">
+        <h1 class="display-lg text-primary text-4xl mb-4">FAQ & Help Center.</h1>
+        <p class="text-sm md:text-base text-body max-w-[600px] leading-relaxed">
+          Need assistance or ran into an issue? Find answers to frequently asked questions and troubleshooting guides here.
+        </p>
+      </div>
+    </section>
+
+    <!-- Embedded FAQ Accordions -->
+    <FAQ />
+
+    <!-- Troubleshooting Tips Section -->
+    <section class="py-16 bg-canvas border-b border-hairline" aria-label="Troubleshooting guide">
+      <div class="max-w-[800px] mx-auto px-6">
+        <h2 class="display-sm text-primary mb-6">Troubleshooting Common Issues</h2>
+        
+        <div class="space-y-6">
+          <div class="p-5 bg-canvas-soft border border-hairline rounded-md">
+            <h3 class="text-sm font-semibold text-primary mb-2">Error: "The video link you entered is invalid"</h3>
+            <p class="text-xs text-body leading-relaxed">
+              Make sure you copied the full URL from your browser's address bar or the share modal. We support links from <code class="bg-canvas-soft-2 px-1 py-0.5 rounded border border-hairline text-primary">youtube.com/watch?v=...</code>, <code class="bg-canvas-soft-2 px-1 py-0.5 rounded border border-hairline text-primary">youtu.be/...</code>, and <code class="bg-canvas-soft-2 px-1 py-0.5 rounded border border-hairline text-primary">youtube.com/shorts/...</code>. Do not use playlists or channel URLs.
+            </p>
+          </div>
+
+          <div class="p-5 bg-canvas-soft border border-hairline rounded-md">
+            <h3 class="text-sm font-semibold text-primary mb-2">The conversion is stuck at 0% or "connecting"</h3>
+            <p class="text-xs text-body leading-relaxed">
+              This usually happens when the video is extremely long (over 4 hours for MP3, over 1 hour for MP4), geo-restricted, or private. Make sure the video is public and viewable without restrictions.
+            </p>
+          </div>
+
+          <div class="p-5 bg-canvas-soft border border-hairline rounded-md">
+            <h3 class="text-sm font-semibold text-primary mb-2">How do I download the converted file on iOS / iPhone?</h3>
+            <p class="text-xs text-body leading-relaxed">
+              On iOS, Apple restricts direct downloads in some browsers. We recommend using Safari or the Google Chrome app. Once the download begins, tap the download icon in the address bar and select "Downloads" to save it directly to the Files app.
+            </p>
+          </div>
+        </div>
+
+        <div class="mt-10 text-center bg-canvas-soft-2 border border-hairline rounded-md p-6">
+          <h3 class="text-sm font-semibold text-primary mb-2">Still need help?</h3>
+          <p class="text-xs text-body mb-4">Our support team is here to assist you. Drop us a message through the contact form.</p>
+          <a href="/contact" class="h-9 inline-flex items-center justify-center px-4 rounded-pill bg-primary hover:bg-opacity-90 text-on-primary text-xs font-medium transition-colors shadow-level-2 select-none">
+            Go to Contact Form
+          </a>
+        </div>
+      </div>
+    </section>
+  </main>
+  
+  <Footer />
+</Layout>
