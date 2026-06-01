@@ -115,7 +115,11 @@ export async function GET({ request }: { request: Request }) {
   }
 
   try {
-    const yt = await Innertube.create({ client_type: 'ANDROID_VR' });
+    const yt = await Innertube.create({
+      client_type: 'ANDROID_VR',
+      po_token: process.env.PO_TOKEN || undefined,
+      visitor_data: process.env.VISITOR_DATA || undefined
+    });
     const info = await yt.getBasicInfo(videoId);
     const title = info.basic_info.title || 'YouTube Download';
     const safeTitle = sanitizeFilename(title);
