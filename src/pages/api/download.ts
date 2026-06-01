@@ -2,6 +2,9 @@ import { Innertube, Platform } from 'youtubei.js';
 import ffmpegPath from 'ffmpeg-static';
 import { spawn } from 'child_process';
 import { Readable } from 'stream';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 
 // Setup signature decipher shim for Innertube
 if (typeof Platform !== 'undefined' && Platform.shim) {
@@ -24,44 +27,76 @@ function sanitizeFilename(name: string) {
   return name.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim();
 }
 
-async function getVerifiedStream(info: any, options: any) {
-  const stream = await info.download(options);
-  
-  // Peek at the first chunk to force connection and verify signatures / HTTP status
-  const reader = stream.getReader();
-  let firstChunk: any;
+/**
+ * Downloads a YouTube media stream in parallel using HTTP range chunks.
+ * This bypasses YouTube's rate-limiting/bandwidth throttling completely.
+ */
+async function downloadFormatInParallel(
+  decipheredUrl: string,
+  contentLength: number,
+  outputPath: string,
+  requestSignal?: AbortSignal
+) {
+  // If content length is not available or too small, fall back to a single request
+  if (!contentLength || contentLength <= 0) {
+    const res = await fetch(decipheredUrl, { signal: requestSignal });
+    if (!res.ok) throw new Error(`Fetch failed with status ${res.status}`);
+    const arrayBuffer = await res.arrayBuffer();
+    await fs.promises.writeFile(outputPath, Buffer.from(arrayBuffer));
+    return;
+  }
+
+  // Pre-allocate file space to allow random-access parallel writes
+  const fd = fs.openSync(outputPath, 'w');
+  fs.writeSync(fd, Buffer.alloc(1), 0, 1, contentLength - 1);
+  fs.closeSync(fd);
+
+  const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks for high-speed download
+  const promises: Promise<void>[] = [];
+  let offset = 0;
+
+  while (offset < contentLength) {
+    const start = offset;
+    const end = Math.min(offset + CHUNK_SIZE - 1, contentLength - 1);
+
+    const downloadChunk = async () => {
+      if (requestSignal?.aborted) return;
+      const res = await fetch(`${decipheredUrl}&range=${start}-${end}`, {
+        signal: requestSignal
+      });
+      if (!res.ok) {
+        throw new Error(`Failed to fetch chunk ${start}-${end}: HTTP ${res.status}`);
+      }
+
+      const arrayBuffer = await res.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      const writeStream = fs.createWriteStream(outputPath, {
+        flags: 'r+',
+        start: start
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        writeStream.write(buffer, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      writeStream.close();
+    };
+
+    promises.push(downloadChunk());
+    offset += CHUNK_SIZE;
+  }
+
   try {
-    const { value } = await reader.read();
-    firstChunk = value;
-    reader.releaseLock();
+    await Promise.all(promises);
   } catch (err) {
-    reader.releaseLock();
+    try {
+      if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+    } catch (e) {}
     throw err;
   }
-  
-  // Reconstruct the Web ReadableStream by prepending the peeked first chunk
-  return new ReadableStream({
-    async start(controller) {
-      if (firstChunk) {
-        controller.enqueue(firstChunk);
-      }
-      const r = stream.getReader();
-      try {
-        while (true) {
-          const { done, value } = await r.read();
-          if (done) {
-            controller.close();
-            break;
-          }
-          controller.enqueue(value);
-        }
-      } catch (err) {
-        controller.error(err);
-      } finally {
-        r.releaseLock();
-      }
-    }
-  });
 }
 
 export async function GET({ request }: { request: Request }) {
@@ -89,6 +124,8 @@ export async function GET({ request }: { request: Request }) {
     let contentType = '';
     let extension = '';
 
+    const tempDir = os.tmpdir();
+
     if (format === 'mp3') {
       // Find the absolute best audio-only stream (Opus or AAC)
       const audioFormat = info.chooseFormat({ type: 'audio', quality: 'best' });
@@ -98,13 +135,17 @@ export async function GET({ request }: { request: Request }) {
 
       const audioUrl = await audioFormat.decipher(yt.session.actions.sig_helper);
       const targetBitrate = quality || '192';
-      console.log(`Transcoding audio stream (itag: ${audioFormat.itag}) for video ${videoId} to MP3 at ${targetBitrate}kbps`);
+      const audioTempPath = path.join(tempDir, `yt_audio_${videoId}_${Date.now()}.m4a`);
 
-      // Spawn FFmpeg to transcode to MP3 on-the-fly 
+      console.log(`Downloading audio stream in parallel chunks (itag: ${audioFormat.itag}) for video ${videoId}`);
+      await downloadFormatInParallel(audioUrl, Number(audioFormat.content_length), audioTempPath, request.signal);
+
+      console.log(`Transcoding downloaded local audio to MP3 at ${targetBitrate}kbps`);
+      // Spawn FFmpeg to transcode to MP3 on-the-fly
       const ffmpegProcess = spawn(ffmpegPath || 'ffmpeg', [
         '-hide_banner',
         '-loglevel', 'error',
-        '-i', audioUrl,
+        '-i', audioTempPath,
         '-c:a', 'libmp3lame',
         '-b:a', `${targetBitrate}k`,
         '-f', 'mp3',
@@ -115,7 +156,7 @@ export async function GET({ request }: { request: Request }) {
       contentType = 'audio/mpeg';
       extension = 'mp3';
 
-      // Log ffmpeg errors
+      // Log ffmpeg errors and clean up temp file
       let ffmpegStderr = '';
       ffmpegProcess.stderr.on('data', (chunk) => {
         ffmpegStderr += chunk.toString();
@@ -124,13 +165,15 @@ export async function GET({ request }: { request: Request }) {
         if (code !== 0) {
           console.error(`ffmpeg process exited with code ${code}. Stderr: ${ffmpegStderr}`);
         }
+        try { if (fs.existsSync(audioTempPath)) fs.unlinkSync(audioTempPath); } catch (e) {}
       });
 
-      // Kill ffmpeg process on client abort
+      // Kill ffmpeg process and clean up on client abort
       if (request.signal) {
         request.signal.addEventListener('abort', () => {
           console.log('Client aborted download, killing ffmpeg process...');
           ffmpegProcess.kill('SIGKILL');
+          try { if (fs.existsSync(audioTempPath)) fs.unlinkSync(audioTempPath); } catch (e) {}
         });
       }
     } else {
@@ -193,14 +236,22 @@ export async function GET({ request }: { request: Request }) {
         const videoUrl = await videoFormat.decipher(yt.session.actions.sig_helper);
         const audioUrl = await audioFormat.decipher(yt.session.actions.sig_helper);
 
-        console.log(`Muxing video (itag: ${videoFormat.itag}) and audio (itag: ${audioFormat.itag}) on-the-fly to MP4`);
+        const videoTempPath = path.join(tempDir, `yt_video_${videoId}_${Date.now()}.mp4`);
+        const audioTempPath = path.join(tempDir, `yt_audio_${videoId}_${Date.now()}.m4a`);
 
+        console.log(`Downloading video and audio streams in parallel chunks for video ${videoId}`);
+        await Promise.all([
+          downloadFormatInParallel(videoUrl, Number(videoFormat.content_length), videoTempPath, request.signal),
+          downloadFormatInParallel(audioUrl, Number(audioFormat.content_length), audioTempPath, request.signal)
+        ]);
+
+        console.log(`Muxing downloaded video (itag: ${videoFormat.itag}) and audio (itag: ${audioFormat.itag}) on-the-fly to MP4`);
         // Spawn FFmpeg to copy-mux streams on-the-fly
         const ffmpegProcess = spawn(ffmpegPath || 'ffmpeg', [
           '-hide_banner',
           '-loglevel', 'error',
-          '-i', videoUrl,
-          '-i', audioUrl,
+          '-i', videoTempPath,
+          '-i', audioTempPath,
           '-c:v', 'copy',
           '-c:a', 'copy',
           '-f', 'mp4',
@@ -212,7 +263,12 @@ export async function GET({ request }: { request: Request }) {
         contentType = 'video/mp4';
         extension = 'mp4';
 
-        // Log ffmpeg errors
+        const cleanup = () => {
+          try { if (fs.existsSync(videoTempPath)) fs.unlinkSync(videoTempPath); } catch (e) {}
+          try { if (fs.existsSync(audioTempPath)) fs.unlinkSync(audioTempPath); } catch (e) {}
+        };
+
+        // Log ffmpeg errors and clean up temp files
         let ffmpegStderr = '';
         ffmpegProcess.stderr.on('data', (chunk) => {
           ffmpegStderr += chunk.toString();
@@ -221,23 +277,41 @@ export async function GET({ request }: { request: Request }) {
           if (code !== 0) {
             console.error(`ffmpeg process exited with code ${code}. Stderr: ${ffmpegStderr}`);
           }
+          cleanup();
         });
 
-        // Kill ffmpeg process on client abort
+        // Kill ffmpeg process and clean up on client abort
         if (request.signal) {
           request.signal.addEventListener('abort', () => {
             console.log('Client aborted download, killing ffmpeg process...');
             ffmpegProcess.kill('SIGKILL');
+            cleanup();
           });
         }
       } else {
         // Direct stream download for combined format (no FFmpeg needed)
-        console.log(`Direct streaming combined video (itag: ${videoFormat.itag})`);
-        webStream = await getVerifiedStream(info, {
-          itag: videoFormat.itag
-        });
+        const videoUrl = await videoFormat.decipher(yt.session.actions.sig_helper);
+        const tempPath = path.join(tempDir, `yt_combined_${videoId}_${Date.now()}.mp4`);
+
+        console.log(`Downloading combined video stream in parallel chunks (itag: ${videoFormat.itag})`);
+        await downloadFormatInParallel(videoUrl, Number(videoFormat.content_length), tempPath, request.signal);
+
+        const readStream = fs.createReadStream(tempPath);
+        webStream = Readable.toWeb(readStream);
         contentType = 'video/mp4';
         extension = 'mp4';
+
+        readStream.on('close', () => {
+          try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch (e) {}
+        });
+
+        if (request.signal) {
+          request.signal.addEventListener('abort', () => {
+            console.log('Client aborted download, cleaning up...');
+            readStream.destroy();
+            try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch (e) {}
+          });
+        }
       }
     }
 
