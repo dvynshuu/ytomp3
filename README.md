@@ -111,7 +111,7 @@ The bookmarklet allows users to convert current YouTube tabs instantly by clicki
 javascript:(function(){
   var url = window.location.href;
   if(url.indexOf('youtube.com/watch') !== -1){
-    window.open('https://rytomp3.in/?url=' + encodeURIComponent(url));
+    window.open('https://ytomp3.in/?url=' + encodeURIComponent(url));
   } else {
     alert('Drag this to your bookmarks, then click it while watching a YouTube video!');
   }
