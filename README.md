@@ -5,7 +5,7 @@
 [![Vercel Design](https://img.shields.io/badge/Design_Language-Vercel-171717?style=flat&logo=vercel&logoColor=white)](https://vercel.com)
 [![Build Status](https://img.shields.io/badge/Build-Static-green?style=flat)](#-commands)
 
-A modern, high-performance, premium-quality YouTube to MP3 and MP4 media converter website built for **ytomp3.in**. The project features a stark, minimal Vercel-inspired canvas, atmospheric mesh gradients, custom Geist/Inter typography, stacked box-shadow elevations, and custom state machines.
+A modern, high-performance, premium-quality YouTube to MP3 and MP4 media converter website built for **yttomp3-converter.onrender.com**. The project features a stark, minimal Vercel-inspired canvas, atmospheric mesh gradients, custom Geist/Inter typography, stacked box-shadow elevations, and custom state machines.
 
 ---
 
@@ -111,7 +111,7 @@ The bookmarklet allows users to convert current YouTube tabs instantly by clicki
 javascript:(function(){
   var url = window.location.href;
   if(url.indexOf('youtube.com/watch') !== -1){
-    window.open('https://ytomp3.in/?url=' + encodeURIComponent(url));
+    window.open('https://yttomp3-converter.onrender.com/?url=' + encodeURIComponent(url));
   } else {
     alert('Drag this to your bookmarks, then click it while watching a YouTube video!');
   }
