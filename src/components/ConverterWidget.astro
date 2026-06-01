@@ -267,7 +267,7 @@
   }
 
   // Conversion process
-  btnConvert?.addEventListener('click', () => {
+  btnConvert?.addEventListener('click', async () => {
     const url = inputUrl?.value.trim();
     if (!url) {
       if (inputUrl) inputUrl.reportValidity();
@@ -287,103 +287,87 @@
 
     // Go to converting state
     showState('converting');
-    simulateConversion(videoId, url);
-  });
+    
+    // Reset progress bar
+    if (progressBar) progressBar.style.width = '0%';
+    if (progressPercent) progressPercent.innerText = '0%';
+    if (progressEta) progressEta.innerText = 'Connecting...';
+    if (statusTitle) statusTitle.innerText = "Extracting video metadata";
+    if (statusSub) statusSub.innerText = "Connecting to YouTube stream server...";
 
-  // Simulate conversion progress
-  function simulateConversion(videoId: string | null, originalUrl: string) {
     let progress = 0;
-    
-    // Mock metadata
-    const titles = [
-      "Lofi Hip Hop Radio - Beats to Relax/Study to",
-      "Vercel Ship 2025 Keynote Presentation",
-      "Astro 6.0: The Future of Web Frameworks",
-      "Official Music Video - Summer Vibe Mix",
-      "How to Build a Premium SaaS Landing Page"
-    ];
-    const mockTitle = videoId 
-      ? `YouTube Video (${videoId})` 
-      : titles[Math.floor(Math.random() * titles.length)];
+    const progressInterval = setInterval(() => {
+      if (progress < 90) {
+        progress += Math.floor(Math.random() * 8) + 2;
+        if (progressBar) progressBar.style.width = `${progress}%`;
+        if (progressPercent) progressPercent.innerText = `${progress}%`;
+      }
+    }, 200);
 
-    const selectedQuality = qualitySelect?.value || '192';
-    const isAudio = currentFormat === 'mp3';
-    
-    let sizeMB = 0;
-    let qualityLabel = '';
-    
-    if (isAudio) {
-      const bitrates: Record<string, number> = { '320': 7.5, '256': 6.0, '192': 4.5, '128': 3.0 };
-      sizeMB = bitrates[selectedQuality] || 4.5;
-      qualityLabel = `${selectedQuality}kbps`;
-    } else {
-      const resolutions: Record<string, number> = { '1080': 75.0, '720': 45.0, '480': 25.0, '360': 15.0 };
-      sizeMB = resolutions[selectedQuality] || 45.0;
-      qualityLabel = `${selectedQuality}p`;
-    }
+    try {
+      const response = await fetch(`/api/info?url=${encodeURIComponent(url)}`);
+      clearInterval(progressInterval);
 
-    const interval = setInterval(() => {
-      progress += Math.floor(Math.random() * 15) + 5;
-      if (progress > 100) progress = 100;
-
-      // Update progress bar
-      if (progressBar) progressBar.style.width = `${progress}%`;
-      if (progressPercent) progressPercent.innerText = `${progress}%`;
-
-      // Update ETA
-      if (progressEta) {
-        const remaining = Math.round((100 - progress) * 0.1);
-        progressEta.innerText = remaining > 0 ? `ETA: ~${remaining}s` : "Finalizing...";
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Failed to fetch video details');
       }
 
-      // Update status messages
-      if (progress < 25) {
-        if (statusTitle) statusTitle.innerText = "Extracting video metadata";
-        if (statusSub) statusSub.innerText = "Connecting to YouTube stream server...";
-      } else if (progress < 60) {
-        if (statusTitle) statusTitle.innerText = isAudio ? "Downloading audio track" : "Downloading video stream";
-        if (statusSub) statusSub.innerText = `Fetching fragments: ${progress}% completed...`;
-      } else if (progress < 85) {
-        if (statusTitle) statusTitle.innerText = isAudio ? "Converting to MP3 format" : "Encoding video frames";
-        if (statusSub) statusSub.innerText = `Re-packaging media containers: ${qualityLabel}`;
+      const data = await response.json();
+      
+      // Update progress to 100%
+      if (progressBar) progressBar.style.width = '100%';
+      if (progressPercent) progressPercent.innerText = '100%';
+      if (progressEta) progressEta.innerText = 'Done!';
+
+      // Fill Done state details
+      if (doneTitle) doneTitle.innerText = data.title;
+      if (doneDuration) doneDuration.innerText = `Duration: ${data.durationFormatted}`;
+      
+      const selectedQuality = qualitySelect?.value || '192';
+      const isAudio = currentFormat === 'mp3';
+      let sizeMB = 0;
+      let qualityLabel = '';
+      
+      if (isAudio) {
+        sizeMB = (data.durationSeconds * Number(selectedQuality)) / 8000;
+        qualityLabel = `${selectedQuality}kbps`;
       } else {
-        if (statusTitle) statusTitle.innerText = "Generating download links";
-        if (statusSub) statusSub.innerText = "Writing tags and packaging files...";
+        const mins = data.durationSeconds / 60;
+        const sizePerMin: Record<string, number> = { '1080': 15.0, '720': 8.0, '480': 4.5, '360': 2.5 };
+        sizeMB = mins * (sizePerMin[selectedQuality] || 8.0);
+        qualityLabel = `${selectedQuality}p`;
       }
 
-      // Complete
-      if (progress === 100) {
-        clearInterval(interval);
-        
-        // Setup done state UI
-        if (doneTitle) doneTitle.innerText = mockTitle;
-        if (doneDuration) doneDuration.innerText = "Duration: 04:12";
-        if (doneInfo) doneInfo.innerText = `Format: ${currentFormat.toUpperCase()} • ${qualityLabel} • ~${sizeMB.toFixed(1)} MB`;
+      if (doneInfo) {
+        doneInfo.innerText = `Format: ${currentFormat.toUpperCase()} • ${qualityLabel} • ~${sizeMB.toFixed(1)} MB`;
+      }
 
-        // Mock thumbnail
-        if (videoId && doneThumb) {
-          doneThumb.src = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
-          doneThumb.classList.remove('hidden');
-          doneThumbPlaceholder?.classList.add('hidden');
-        } else if (doneThumb) {
-          doneThumb.classList.add('hidden');
-          doneThumbPlaceholder?.classList.remove('hidden');
-        }
+      if (doneThumb) {
+        doneThumb.src = data.thumbnail;
+        doneThumb.classList.remove('hidden');
+        doneThumbPlaceholder?.classList.add('hidden');
+      }
 
-        // Setup mock downloadable file
-        if (btnDownload) {
-          btnDownload.href = `https://rytomp3.in/downloads/mock-file.${currentFormat}`;
-          btnDownload.addEventListener('click', (e) => {
-            // Since it's a mock download on a static app, we prevent default link click and alert user
-            e.preventDefault();
-            alert(`Simulated Download initiated!\nFile: "${mockTitle}.${currentFormat}"\nQuality: ${qualityLabel}\nSize: ~${sizeMB.toFixed(1)}MB\n\n(This is a premium frontend mockup. A backend conversion pipeline would deliver the file here.)`);
-          });
-        }
+      // Configure direct download URL
+      if (btnDownload) {
+        btnDownload.href = `/api/download?url=${encodeURIComponent(url)}&format=${currentFormat}&quality=${selectedQuality}`;
+      }
 
+      // Show Done state after a slight delay for visual transition
+      setTimeout(() => {
         showState('done');
+      }, 300);
+
+    } catch (err: any) {
+      clearInterval(progressInterval);
+      console.error(err);
+      if (errorMessage) {
+        errorMessage.innerText = err.message || 'An error occurred during video extraction.';
       }
-    }, 400);
-  }
+      showState('error');
+    }
+  });
 
   // Reset to idle
   btnConvertAnother?.addEventListener('click', () => {
