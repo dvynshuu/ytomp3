@@ -1,0 +1,45 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Navbar from '../components/Navbar.astro';
+import Footer from '../components/Footer.astro';
+---
+
+<Layout 
+  title="404 — Page Not Found | yt2mp3"
+  description="The page you are looking for does not exist or has been moved. Return to the home page to convert YouTube videos to MP3 and MP4."
+  canonicalUrl="https://ytomp3.in/404"
+>
+  <Navbar />
+  
+  <main class="flex-grow flex items-center justify-center relative overflow-hidden py-16 md:py-24">
+    <!-- Mesh decorative atmospheric glow -->
+    <div class="absolute inset-0 pointer-events-none opacity-40 select-none">
+      <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[500px] bg-gradient-to-b from-[#7928ca]/10 via-[#ff0080]/5 to-transparent rounded-full blur-[100px]"></div>
+    </div>
+
+    <div class="max-w-[500px] mx-auto px-6 relative z-10 text-center flex flex-col items-center">
+      <!-- Error Number -->
+      <div class="inline-flex items-center space-x-2 bg-error-soft text-error px-3 py-1 rounded-full border border-error/20 mb-6 font-mono text-xs select-none">
+        <span>404 ERROR</span>
+      </div>
+
+      <h1 class="display-lg text-primary text-4xl md:text-5xl mb-4 leading-tight">
+        Lost in conversion?
+      </h1>
+      
+      <p class="text-sm md:text-base text-body leading-relaxed mb-8">
+        The page you are looking for doesn't exist, was removed, or had its URL changed. Let's get you back on track to converting your favorite videos!
+      </p>
+
+      <!-- Return Button -->
+      <a 
+        href="/" 
+        class="h-12 inline-flex items-center justify-center px-6 rounded-pill bg-primary hover:bg-opacity-90 text-on-primary text-sm font-medium transition-all duration-200 shadow-level-3 select-none hover:translate-y-[-1px] active:translate-y-[0]"
+      >
+        Return to Homepage
+      </a>
+    </div>
+  </main>
+  
+  <Footer />
+</Layout>

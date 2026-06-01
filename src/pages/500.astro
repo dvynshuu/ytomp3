@@ -1,0 +1,54 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Navbar from '../components/Navbar.astro';
+import Footer from '../components/Footer.astro';
+---
+
+<Layout 
+  title="500 — Server Error | yt2mp3"
+  description="Something went wrong on our server. Please try again later or contact our support team if the issue persists."
+  canonicalUrl="https://rytomp3.in/500"
+>
+  <Navbar />
+  
+  <main class="flex-grow flex items-center justify-center relative overflow-hidden py-16 md:py-24">
+    <!-- Mesh decorative atmospheric glow -->
+    <div class="absolute inset-0 pointer-events-none opacity-40 select-none">
+      <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[500px] bg-gradient-to-b from-[#ff4d4d]/10 via-[#f9cb28]/5 to-transparent rounded-full blur-[100px]"></div>
+    </div>
+
+    <div class="max-w-[500px] mx-auto px-6 relative z-10 text-center flex flex-col items-center">
+      <!-- Error Number -->
+      <div class="inline-flex items-center space-x-2 bg-warning-soft text-warning-deep px-3 py-1 rounded-full border border-warning/20 mb-6 font-mono text-xs select-none">
+        <span>500 SERVER ERROR</span>
+      </div>
+
+      <h1 class="display-lg text-primary text-4xl md:text-5xl mb-4 leading-tight">
+        Something went wrong.
+      </h1>
+      
+      <p class="text-sm md:text-base text-body leading-relaxed mb-8">
+        We encountered an unexpected server-side error. This might be a temporary issue fetching data from YouTube. Please try again in a few moments.
+      </p>
+
+      <div class="flex flex-col sm:flex-row gap-3">
+        <!-- Retry/Home Button -->
+        <a 
+          href="/" 
+          class="h-12 inline-flex items-center justify-center px-6 rounded-pill bg-primary hover:bg-opacity-90 text-on-primary text-sm font-medium transition-all duration-200 shadow-level-3 select-none hover:translate-y-[-1px] active:translate-y-[0]"
+        >
+          Return to Homepage
+        </a>
+        <!-- Support/Contact Button -->
+        <a 
+          href="/contact" 
+          class="h-12 inline-flex items-center justify-center px-6 rounded-pill bg-canvas hover:bg-canvas-soft border border-hairline text-primary text-sm font-medium transition-all duration-200 shadow-level-2 select-none"
+        >
+          Contact Support Center
+        </a>
+      </div>
+    </div>
+  </main>
+  
+  <Footer />
+</Layout>
