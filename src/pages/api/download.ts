@@ -1,4 +1,4 @@
-import { getInnertube } from '../../lib/innertube-cache';
+import { getInnertube, invalidateCache, CLIENT_TYPES } from '../../lib/innertube-cache';
 import ffmpegPath from 'ffmpeg-static';
 import { spawn } from 'child_process';
 import { Readable } from 'stream';
@@ -16,6 +16,13 @@ function getYouTubeID(url: string) {
 
 function sanitizeFilename(name: string) {
   return name.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim();
+}
+
+function isTimeoutError(err: any): boolean {
+  const msg = String(err?.message || err);
+  return msg.includes('fetch failed') || msg.includes('timeout') ||
+         err?.cause?.code === 'UND_ERR_CONNECT_TIMEOUT' ||
+         err?.code === 'UND_ERR_CONNECT_TIMEOUT';
 }
 
 /**
@@ -47,34 +54,85 @@ async function saveStreamToFile(
 }
 
 /**
- * Download helper with retry logic to handle transient googlevideo network timeouts.
+ * Fetch video info with client-type fallback.
+ * If the primary client's CDN URLs timeout during download, we cycle
+ * through alternative client types to get fresh CDN URLs from different
+ * googlevideo servers.
  */
-async function downloadWithRetry(
-  info: any,
-  options: any,
-  retries = 3,
-  delayMs = 1000
-): Promise<any> {
-  for (let i = 0; i < retries; i++) {
+async function getInfoWithFallback(videoId: string) {
+  const errors: string[] = [];
+
+  for (const clientType of CLIENT_TYPES) {
     try {
-      return await info.download(options);
-    } catch (err: any) {
-      const isTimeout = err?.message?.includes('timeout') || err?.code === 'UND_ERR_CONNECT_TIMEOUT' || String(err).includes('fetch failed');
-      if (isTimeout && i < retries - 1) {
-        console.warn(`[Stream-Retry] Connection failed (attempt ${i + 1}/${retries}). Retrying in ${delayMs}ms... Error: ${err?.message || err}`);
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-        delayMs *= 2; // Exponential backoff
+      const yt = await getInnertube(clientType);
+      const info = await yt.getBasicInfo(videoId);
+
+      if (info.playability_status && info.playability_status.status !== 'OK') {
+        const reason = info.playability_status.reason || 'Video unplayable';
+        console.warn(`[Fallback] ${clientType} returned unplayable: ${reason}`);
+        errors.push(`${clientType}: ${reason}`);
         continue;
       }
-      throw err;
+
+      return { info, clientType };
+    } catch (err: any) {
+      console.warn(`[Fallback] ${clientType} getBasicInfo failed: ${err?.message}`);
+      errors.push(`${clientType}: ${err?.message}`);
+      invalidateCache(clientType);
+      continue;
     }
   }
+
+  throw new Error(`All client types failed to fetch video info: ${errors.join('; ')}`);
+}
+
+/**
+ * Attempt to download a stream, falling back to different client types
+ * if the CDN connection times out. Each fallback re-fetches video info
+ * to get fresh CDN URLs pointing to different googlevideo servers.
+ */
+async function downloadStreamWithFallback(
+  videoId: string,
+  downloadOptions: any,
+  startingClientIndex: number = 0
+): Promise<{ stream: any; info: any; clientType: string }> {
+  const errors: string[] = [];
+
+  for (let i = startingClientIndex; i < CLIENT_TYPES.length; i++) {
+    const clientType = CLIENT_TYPES[i];
+    try {
+      const yt = await getInnertube(clientType);
+      const info = await yt.getBasicInfo(videoId);
+
+      if (info.playability_status && info.playability_status.status !== 'OK') {
+        errors.push(`${clientType}: unplayable`);
+        continue;
+      }
+
+      console.log(`[Download] Trying ${clientType} client for stream...`);
+      const stream = await info.download(downloadOptions);
+      return { stream, info, clientType };
+    } catch (err: any) {
+      if (isTimeoutError(err)) {
+        console.warn(`[Download] ${clientType} CDN timed out, trying next client type...`);
+        invalidateCache(clientType);
+        errors.push(`${clientType}: CDN timeout`);
+        continue;
+      }
+      // Non-timeout error — might be a format issue, try next
+      console.warn(`[Download] ${clientType} download error: ${err?.message}`);
+      errors.push(`${clientType}: ${err?.message}`);
+      continue;
+    }
+  }
+
+  throw new Error(`All client types failed to download stream: ${errors.join('; ')}`);
 }
 
 export async function GET({ request }: { request: Request }) {
   const urlParams = new URL(request.url).searchParams;
   const videoUrl = urlParams.get('url');
-  const format = urlParams.get('format') || 'mp3'; // 'mp3' or 'mp4'
+  const format = urlParams.get('format') || 'mp3';
   const quality = urlParams.get('quality');
 
   if (!videoUrl) {
@@ -87,17 +145,6 @@ export async function GET({ request }: { request: Request }) {
   }
 
   try {
-    // Use cached Innertube instance — avoids 2-8s cold start
-    const yt = await getInnertube();
-    const info = await yt.getBasicInfo(videoId);
-
-    if (info.playability_status && info.playability_status.status !== 'OK') {
-      throw new Error(info.playability_status.reason || 'This YouTube video is restricted or unplayable.');
-    }
-
-    const title = info.basic_info.title || 'YouTube Download';
-    const safeTitle = sanitizeFilename(title);
-
     let webStream: any;
     let contentType = '';
     let extension = '';
@@ -106,27 +153,29 @@ export async function GET({ request }: { request: Request }) {
 
     if (format === 'mp3') {
       // ═══════════════════════════════════════════════════════════════════
-      // MP3: STREAMING PIPELINE — pipe YouTube audio directly into ffmpeg
-      // instead of downloading the entire file to disk first.
-      // This eliminates the "download-to-temp-file" wait and starts
-      // sending bytes to the client almost immediately.
+      // MP3: STREAMING PIPELINE with client-type fallback
+      // Downloads audio via YouTube → pipes directly into ffmpeg → client.
+      // If a CDN times out, automatically retries with a different YouTube
+      // client type to get routed to a different googlevideo server.
       // ═══════════════════════════════════════════════════════════════════
       const targetBitrate = quality || '192';
-      console.log(`[MP3] Streaming audio → ffmpeg pipeline for ${videoId} at ${targetBitrate}kbps`);
+      console.log(`[MP3] Starting download for ${videoId} at ${targetBitrate}kbps`);
 
-      // Get the YouTube audio stream (web ReadableStream) with robust retry
-      const ytStream = await downloadWithRetry(info, { type: 'audio', quality: 'best' });
+      const { stream: ytStream } = await downloadStreamWithFallback(
+        videoId,
+        { type: 'audio', quality: 'best' }
+      );
       const nodeReadable = Readable.fromWeb(ytStream as any);
 
-      // Spawn FFmpeg reading from stdin (pipe:0) instead of a temp file
+      // Spawn FFmpeg reading from stdin (pipe:0)
       const ffmpegProcess = spawn(ffmpegPath || 'ffmpeg', [
         '-hide_banner',
         '-loglevel', 'error',
-        '-i', 'pipe:0',        // Read from stdin
+        '-i', 'pipe:0',
         '-c:a', 'libmp3lame',
         '-b:a', `${targetBitrate}k`,
         '-f', 'mp3',
-        'pipe:1'               // Write to stdout
+        'pipe:1'
       ]);
 
       // Pipe YouTube audio directly into ffmpeg's stdin
@@ -138,7 +187,6 @@ export async function GET({ request }: { request: Request }) {
         ffmpegProcess.stdin.destroy();
       });
       ffmpegProcess.stdin.on('error', (err) => {
-        // EPIPE is expected if ffmpeg closes early; don't crash
         if ((err as any).code !== 'EPIPE') {
           console.error('[MP3] ffmpeg stdin error:', err.message);
         }
@@ -149,7 +197,6 @@ export async function GET({ request }: { request: Request }) {
       contentType = 'audio/mpeg';
       extension = 'mp3';
 
-      // Log ffmpeg errors
       let ffmpegStderr = '';
       ffmpegProcess.stderr.on('data', (chunk) => {
         ffmpegStderr += chunk.toString();
@@ -163,7 +210,6 @@ export async function GET({ request }: { request: Request }) {
         }
       });
 
-      // Kill ffmpeg + destroy YouTube stream on client abort
       if (request.signal) {
         request.signal.addEventListener('abort', () => {
           console.log('[MP3] Client aborted, killing pipeline...');
@@ -174,12 +220,14 @@ export async function GET({ request }: { request: Request }) {
 
     } else {
       // ═══════════════════════════════════════════════════════════════════
-      // MP4: Format selection + muxing when needed
+      // MP4: Get info first (with fallback), then select format + download
       // ═══════════════════════════════════════════════════════════════════
+      const { info, clientType } = await getInfoWithFallback(videoId);
+      const title = info.basic_info.title || 'YouTube Download';
+
       let videoFormat: any;
       let needsMuxing = false;
 
-      // Select format based on quality
       if (quality === '1080') {
         videoFormat = info.chooseFormat({ type: 'video', quality: '1080p', format: 'mp4' }) ||
                       info.chooseFormat({ type: 'video', quality: '1080p' });
@@ -208,7 +256,6 @@ export async function GET({ request }: { request: Request }) {
         }
       }
 
-      // Default fallback
       if (!videoFormat) {
         videoFormat = info.streaming_data?.formats?.find((f: any) => f.itag === 22) ||
                       info.streaming_data?.formats?.find((f: any) => f.itag === 18) ||
@@ -222,23 +269,20 @@ export async function GET({ request }: { request: Request }) {
       }
 
       if (needsMuxing) {
-        // ─── Muxing path: download video + audio in parallel to temp files,
-        //     then mux via ffmpeg. We use parallel downloads to cut wait time.
         const videoTempPath = path.join(tempDir, `yt_video_${videoId}_${Date.now()}.mp4`);
         const audioTempPath = path.join(tempDir, `yt_audio_${videoId}_${Date.now()}.m4a`);
 
-        console.log(`[MP4-MUX] Downloading video+audio streams in parallel for ${videoId}`);
+        console.log(`[MP4-MUX] Downloading video+audio in parallel for ${videoId} via ${clientType}`);
 
-        // Start both downloads concurrently with retry protection
-        const [videoStream, audioStream] = await Promise.all([
-          downloadWithRetry(info, { type: 'video', quality: `${quality}p` }),
-          downloadWithRetry(info, { type: 'audio', quality: 'best' })
+        // Download both streams with individual client-type fallback
+        const [videoResult, audioResult] = await Promise.all([
+          downloadStreamWithFallback(videoId, { type: 'video', quality: `${quality}p` }),
+          downloadStreamWithFallback(videoId, { type: 'audio', quality: 'best' })
         ]);
 
-        // Save both to disk in parallel
         await Promise.all([
-          saveStreamToFile(videoStream, videoTempPath, request.signal),
-          saveStreamToFile(audioStream, audioTempPath, request.signal)
+          saveStreamToFile(videoResult.stream, videoTempPath, request.signal),
+          saveStreamToFile(audioResult.stream, audioTempPath, request.signal)
         ]);
 
         console.log(`[MP4-MUX] Muxing downloaded streams to MP4`);
@@ -286,16 +330,24 @@ export async function GET({ request }: { request: Request }) {
           });
         }
       } else {
-        // ─── Combined format (no muxing): stream directly to client
-        //     Pipe YouTube stream → client with zero temp files.
+        // Combined format — try download with fallback
         console.log(`[MP4-DIRECT] Streaming combined format for ${videoId}`);
-        const videoStream = await downloadWithRetry(info, { type: 'video+audio', quality: `${quality}p` });
+        const { stream: videoStream } = await downloadStreamWithFallback(
+          videoId,
+          { type: 'video+audio', quality: `${quality}p` }
+        );
         webStream = videoStream;
         contentType = 'video/mp4';
         extension = 'mp4';
       }
     }
 
+    // Get title for the Content-Disposition header
+    // (fetch info from whatever client worked — cheap since cached)
+    const yt = await getInnertube();
+    const titleInfo = await yt.getBasicInfo(videoId);
+    const title = titleInfo.basic_info.title || 'YouTube Download';
+    const safeTitle = sanitizeFilename(title);
     const asciiTitle = safeTitle.replace(/[^\x00-\x7F]/g, '').replace(/\s+/g, ' ').trim() || 'download';
 
     return new Response(webStream as any, {
@@ -304,7 +356,7 @@ export async function GET({ request }: { request: Request }) {
         'Content-Disposition': `attachment; filename="${asciiTitle}.${extension}"; filename*=UTF-8''${encodeURIComponent(safeTitle)}.${extension}`,
         'Content-Type': contentType,
         'Cache-Control': 'no-store',
-        'X-App-Version': '2.1.0'
+        'X-App-Version': '2.2.0'
       }
     });
   } catch (error: any) {

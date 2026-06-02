@@ -8,22 +8,27 @@ if (typeof Platform !== 'undefined' && Platform.shim) {
   };
 }
 
-// ─── Cached Innertube singleton ────────────────────────────────────────
-// Innertube.create() fetches and parses YouTube's player JS, builds a
-// signature decipher context, etc. This takes 2-8 seconds on cold start.
-// We cache the instance and reuse it across requests for the same config.
-// The cache expires after 30 minutes to pick up any player changes.
+// ─── Multi-client Innertube cache ──────────────────────────────────────
+// Different YouTube client types (ANDROID, WEB, etc.) return stream URLs
+// pointing to different CDN servers. If one CDN node times out, we can
+// fall back to a different client type to get working URLs.
+//
+// Each client type is cached independently with a 30-minute TTL.
 
 interface CachedInstance {
   instance: Innertube;
   createdAt: number;
-  configKey: string;
 }
 
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
-let cached: CachedInstance | null = null;
+const instanceCache = new Map<string, CachedInstance>();
 
-function getConfig() {
+// Client types to try, in priority order.
+// ANDROID is most reliable for downloads, WEB has broadest format support,
+// ANDROID_VR/TV_EMBEDDED are fallbacks for age-restricted content.
+export const CLIENT_TYPES = ['ANDROID', 'WEB', 'ANDROID_VR', 'TV_EMBEDDED'] as const;
+
+function getAuthConfig() {
   let cookie = process.env.YOUTUBE_COOKIE || undefined;
   if (cookie) {
     cookie = cookie.replace(/^(cookie|Cookie):\s*/i, '').trim().replace(/^["']|["']$/g, '').trim();
@@ -39,37 +44,47 @@ function getConfig() {
     visitorData = visitorData.replace(/^(visitor_data|visitorData):\s*/i, '').trim().replace(/^["']|["']$/g, '').trim();
   }
 
-  const clientType = cookie ? 'MWEB' : 'ANDROID_VR';
-  const configKey = `${clientType}|${cookie || ''}|${poToken || ''}|${visitorData || ''}`;
-
-  return { cookie, poToken, visitorData, clientType, configKey };
+  return { cookie, poToken, visitorData };
 }
 
-export async function getInnertube(): Promise<Innertube> {
-  const config = getConfig();
+/**
+ * Get or create an Innertube instance for a specific client type.
+ * Cached per client type for 30 minutes.
+ */
+export async function getInnertube(clientType?: string): Promise<Innertube> {
+  const auth = getAuthConfig();
+  // If cookie is set, always use MWEB (cookie-authenticated)
+  const resolvedType = auth.cookie ? 'MWEB' : (clientType || CLIENT_TYPES[0]);
   const now = Date.now();
 
-  // Return cached instance if still valid and config matches
-  if (cached && cached.configKey === config.configKey && (now - cached.createdAt) < CACHE_TTL_MS) {
+  const cached = instanceCache.get(resolvedType);
+  if (cached && (now - cached.createdAt) < CACHE_TTL_MS) {
     return cached.instance;
   }
 
-  // Create new instance
+  console.log(`[Innertube] Creating new ${resolvedType} client instance...`);
   const instance = await Innertube.create({
-    client_type: config.clientType as any,
-    cookie: config.cookie,
-    po_token: config.poToken,
-    visitor_data: config.visitorData
+    client_type: resolvedType as any,
+    cookie: auth.cookie,
+    po_token: auth.poToken,
+    visitor_data: auth.visitorData
   });
 
-  cached = {
-    instance,
-    createdAt: now,
-    configKey: config.configKey
-  };
-
+  instanceCache.set(resolvedType, { instance, createdAt: now });
   return instance;
 }
 
-// Eagerly warm up the cache on module load (fire-and-forget)
+/**
+ * Invalidate cached instance for a specific client type (or all).
+ * Forces a fresh Innertube.create() on next call.
+ */
+export function invalidateCache(clientType?: string) {
+  if (clientType) {
+    instanceCache.delete(clientType);
+  } else {
+    instanceCache.clear();
+  }
+}
+
+// Eagerly warm the primary client on module load
 getInnertube().catch(() => {});
