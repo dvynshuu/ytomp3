@@ -60,7 +60,7 @@ export async function GET() {
   const testVideoId = 'dQw4w9WgXcQ';
   try {
     const yt = await Innertube.create({
-      client_type: cookie ? 'WEB' : 'ANDROID_VR',
+      client_type: cookie ? 'MWEB' : 'ANDROID_VR',
       cookie: cookie ? cookie.replace(/^(cookie|Cookie):\s*/i, '').trim().replace(/^["']|["']$/g, '').trim() : undefined,
       po_token: poToken ? poToken.replace(/^(po_token|poToken):\s*/i, '').trim().replace(/^["']|["']$/g, '').trim() : undefined,
       visitor_data: visitorData ? visitorData.replace(/^(visitor_data|visitorData):\s*/i, '').trim().replace(/^["']|["']$/g, '').trim() : undefined
