@@ -121,6 +121,11 @@ export async function GET({ request }: { request: Request }) {
       visitor_data: process.env.VISITOR_DATA || undefined
     });
     const info = await yt.getBasicInfo(videoId);
+
+    if (info.playability_status && info.playability_status.status !== 'OK') {
+      throw new Error(info.playability_status.reason || 'This YouTube video is restricted or unplayable.');
+    }
+
     const title = info.basic_info.title || 'YouTube Download';
     const safeTitle = sanitizeFilename(title);
 

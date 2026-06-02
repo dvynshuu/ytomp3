@@ -55,6 +55,15 @@ export async function GET({ request }: { request: Request }) {
     });
     const info = await yt.getBasicInfo(videoId);
 
+    if (info.playability_status && info.playability_status.status !== 'OK') {
+      return new Response(JSON.stringify({ 
+        error: info.playability_status.reason || 'This YouTube video is restricted or unplayable.'
+      }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
     const title = info.basic_info.title || 'YouTube Video';
     const author = info.basic_info.author || 'Unknown Creator';
     const durationSeconds = info.basic_info.duration || 0;
