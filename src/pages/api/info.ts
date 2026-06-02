@@ -1,12 +1,4 @@
-import { Innertube, Platform } from 'youtubei.js';
-
-// Setup signature decipher shim for Innertube
-if (typeof Platform !== 'undefined' && Platform.shim) {
-  Platform.shim.eval = async (data: any, args: any) => {
-    const fn = new Function(...Object.keys(args), data.output);
-    return fn(...Object.values(args));
-  };
-}
+import { getInnertube } from '../../lib/innertube-cache';
 
 export const prerender = false;
 
@@ -47,28 +39,8 @@ export async function GET({ request }: { request: Request }) {
     });
   }
 
-  let cookie = process.env.YOUTUBE_COOKIE || undefined;
-  if (cookie) {
-    cookie = cookie.replace(/^(cookie|Cookie):\s*/i, '').trim().replace(/^["']|["']$/g, '').trim();
-  }
-
-  let poToken = process.env.PO_TOKEN || undefined;
-  if (poToken) {
-    poToken = poToken.replace(/^(po_token|poToken):\s*/i, '').trim().replace(/^["']|["']$/g, '').trim();
-  }
-
-  let visitorData = process.env.VISITOR_DATA || undefined;
-  if (visitorData) {
-    visitorData = visitorData.replace(/^(visitor_data|visitorData):\s*/i, '').trim().replace(/^["']|["']$/g, '').trim();
-  }
-
   try {
-    const yt = await Innertube.create({
-      client_type: cookie ? 'MWEB' : 'ANDROID_VR',
-      cookie,
-      po_token: poToken,
-      visitor_data: visitorData
-    });
+    const yt = await getInnertube();
     const info = await yt.getBasicInfo(videoId);
 
     if (info.playability_status && info.playability_status.status !== 'OK') {

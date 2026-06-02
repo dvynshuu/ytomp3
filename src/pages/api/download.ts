@@ -1,18 +1,10 @@
-import { Innertube, Platform } from 'youtubei.js';
+import { getInnertube } from '../../lib/innertube-cache';
 import ffmpegPath from 'ffmpeg-static';
 import { spawn } from 'child_process';
 import { Readable } from 'stream';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-
-// Setup signature decipher shim for Innertube
-if (typeof Platform !== 'undefined' && Platform.shim) {
-  Platform.shim.eval = async (data: any, args: any) => {
-    const fn = new Function(...Object.keys(args), data.output);
-    return fn(...Object.values(args));
-  };
-}
 
 export const prerender = false;
 
@@ -23,7 +15,6 @@ function getYouTubeID(url: string) {
 }
 
 function sanitizeFilename(name: string) {
-  // Remove characters that are illegal in Windows/Mac/Linux filenames
   return name.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim();
 }
 
@@ -70,28 +61,9 @@ export async function GET({ request }: { request: Request }) {
     return new Response('Invalid YouTube URL', { status: 400 });
   }
 
-  let cookie = process.env.YOUTUBE_COOKIE || undefined;
-  if (cookie) {
-    cookie = cookie.replace(/^(cookie|Cookie):\s*/i, '').trim().replace(/^["']|["']$/g, '').trim();
-  }
-
-  let poToken = process.env.PO_TOKEN || undefined;
-  if (poToken) {
-    poToken = poToken.replace(/^(po_token|poToken):\s*/i, '').trim().replace(/^["']|["']$/g, '').trim();
-  }
-
-  let visitorData = process.env.VISITOR_DATA || undefined;
-  if (visitorData) {
-    visitorData = visitorData.replace(/^(visitor_data|visitorData):\s*/i, '').trim().replace(/^["']|["']$/g, '').trim();
-  }
-
   try {
-    const yt = await Innertube.create({
-      client_type: cookie ? 'MWEB' : 'ANDROID_VR',
-      cookie,
-      po_token: poToken,
-      visitor_data: visitorData
-    });
+    // Use cached Innertube instance — avoids 2-8s cold start
+    const yt = await getInnertube();
     const info = await yt.getBasicInfo(videoId);
 
     if (info.playability_status && info.playability_status.status !== 'OK') {
@@ -108,54 +80,77 @@ export async function GET({ request }: { request: Request }) {
     const tempDir = os.tmpdir();
 
     if (format === 'mp3') {
-      const audioTempPath = path.join(tempDir, `yt_audio_${videoId}_${Date.now()}.m4a`);
-      console.log(`Downloading audio stream via youtubei.js for video ${videoId}`);
-      const ytStream = await info.download({ type: 'audio', quality: 'best' });
-      await saveStreamToFile(ytStream, audioTempPath, request.signal);
-
+      // ═══════════════════════════════════════════════════════════════════
+      // MP3: STREAMING PIPELINE — pipe YouTube audio directly into ffmpeg
+      // instead of downloading the entire file to disk first.
+      // This eliminates the "download-to-temp-file" wait and starts
+      // sending bytes to the client almost immediately.
+      // ═══════════════════════════════════════════════════════════════════
       const targetBitrate = quality || '192';
-      console.log(`Transcoding downloaded local audio to MP3 at ${targetBitrate}kbps`);
-      // Spawn FFmpeg to transcode to MP3 on-the-fly
+      console.log(`[MP3] Streaming audio → ffmpeg pipeline for ${videoId} at ${targetBitrate}kbps`);
+
+      // Get the YouTube audio stream (web ReadableStream)
+      const ytStream = await info.download({ type: 'audio', quality: 'best' });
+      const nodeReadable = Readable.fromWeb(ytStream as any);
+
+      // Spawn FFmpeg reading from stdin (pipe:0) instead of a temp file
       const ffmpegProcess = spawn(ffmpegPath || 'ffmpeg', [
         '-hide_banner',
         '-loglevel', 'error',
-        '-i', audioTempPath,
+        '-i', 'pipe:0',        // Read from stdin
         '-c:a', 'libmp3lame',
         '-b:a', `${targetBitrate}k`,
         '-f', 'mp3',
-        'pipe:1'
+        'pipe:1'               // Write to stdout
       ]);
+
+      // Pipe YouTube audio directly into ffmpeg's stdin
+      nodeReadable.pipe(ffmpegProcess.stdin);
+
+      // Handle backpressure and errors on stdin
+      nodeReadable.on('error', (err) => {
+        console.error('[MP3] YouTube stream error:', err.message);
+        ffmpegProcess.stdin.destroy();
+      });
+      ffmpegProcess.stdin.on('error', (err) => {
+        // EPIPE is expected if ffmpeg closes early; don't crash
+        if ((err as any).code !== 'EPIPE') {
+          console.error('[MP3] ffmpeg stdin error:', err.message);
+        }
+        nodeReadable.destroy();
+      });
 
       webStream = Readable.toWeb(ffmpegProcess.stdout);
       contentType = 'audio/mpeg';
       extension = 'mp3';
 
-      // Log ffmpeg errors and clean up temp file
+      // Log ffmpeg errors
       let ffmpegStderr = '';
       ffmpegProcess.stderr.on('data', (chunk) => {
         ffmpegStderr += chunk.toString();
       });
       ffmpegProcess.on('error', (err) => {
-        console.error('ffmpegProcess spawn/execution error:', err);
-        try { if (fs.existsSync(audioTempPath)) fs.unlinkSync(audioTempPath); } catch (e) {}
+        console.error('[MP3] ffmpeg spawn/execution error:', err);
       });
       ffmpegProcess.on('close', (code) => {
         if (code !== 0) {
-          console.error(`ffmpeg process exited with code ${code}. Stderr: ${ffmpegStderr}`);
+          console.error(`[MP3] ffmpeg exited with code ${code}. Stderr: ${ffmpegStderr}`);
         }
-        try { if (fs.existsSync(audioTempPath)) fs.unlinkSync(audioTempPath); } catch (e) {}
       });
 
-      // Kill ffmpeg process and clean up on client abort
+      // Kill ffmpeg + destroy YouTube stream on client abort
       if (request.signal) {
         request.signal.addEventListener('abort', () => {
-          console.log('Client aborted download, killing ffmpeg process...');
+          console.log('[MP3] Client aborted, killing pipeline...');
+          nodeReadable.destroy();
           ffmpegProcess.kill('SIGKILL');
-          try { if (fs.existsSync(audioTempPath)) fs.unlinkSync(audioTempPath); } catch (e) {}
         });
       }
+
     } else {
-      // MP4 Video format selection
+      // ═══════════════════════════════════════════════════════════════════
+      // MP4: Format selection + muxing when needed
+      // ═══════════════════════════════════════════════════════════════════
       let videoFormat: any;
       let needsMuxing = false;
 
@@ -165,7 +160,6 @@ export async function GET({ request }: { request: Request }) {
                       info.chooseFormat({ type: 'video', quality: '1080p' });
         needsMuxing = true;
       } else if (quality === '720') {
-        // Try to find combined 720p first (itag 22)
         videoFormat = info.streaming_data?.formats?.find((f: any) => f.itag === 22);
         if (videoFormat) {
           needsMuxing = false;
@@ -179,7 +173,6 @@ export async function GET({ request }: { request: Request }) {
                       info.chooseFormat({ type: 'video', quality: '480p' });
         needsMuxing = true;
       } else if (quality === '360') {
-        // Try to find combined 360p first (itag 18)
         videoFormat = info.streaming_data?.formats?.find((f: any) => f.itag === 18);
         if (videoFormat) {
           needsMuxing = false;
@@ -190,7 +183,7 @@ export async function GET({ request }: { request: Request }) {
         }
       }
 
-      // Default fallback if requested quality is missing
+      // Default fallback
       if (!videoFormat) {
         videoFormat = info.streaming_data?.formats?.find((f: any) => f.itag === 22) ||
                       info.streaming_data?.formats?.find((f: any) => f.itag === 18) ||
@@ -204,20 +197,26 @@ export async function GET({ request }: { request: Request }) {
       }
 
       if (needsMuxing) {
+        // ─── Muxing path: download video + audio in parallel to temp files,
+        //     then mux via ffmpeg. We use parallel downloads to cut wait time.
         const videoTempPath = path.join(tempDir, `yt_video_${videoId}_${Date.now()}.mp4`);
         const audioTempPath = path.join(tempDir, `yt_audio_${videoId}_${Date.now()}.m4a`);
 
-        console.log(`Downloading video and audio streams via youtubei.js for video ${videoId}`);
-        const videoStream = await info.download({ type: 'video', quality: `${quality}p` });
-        const audioStream = await info.download({ type: 'audio', quality: 'best' });
+        console.log(`[MP4-MUX] Downloading video+audio streams in parallel for ${videoId}`);
 
+        // Start both downloads concurrently
+        const [videoStream, audioStream] = await Promise.all([
+          info.download({ type: 'video', quality: `${quality}p` }),
+          info.download({ type: 'audio', quality: 'best' })
+        ]);
+
+        // Save both to disk in parallel
         await Promise.all([
           saveStreamToFile(videoStream, videoTempPath, request.signal),
           saveStreamToFile(audioStream, audioTempPath, request.signal)
         ]);
 
-        console.log(`Muxing downloaded video and audio on-the-fly to MP4`);
-        // Spawn FFmpeg to copy-mux streams on-the-fly
+        console.log(`[MP4-MUX] Muxing downloaded streams to MP4`);
         const ffmpegProcess = spawn(ffmpegPath || 'ffmpeg', [
           '-hide_banner',
           '-loglevel', 'error',
@@ -239,53 +238,36 @@ export async function GET({ request }: { request: Request }) {
           try { if (fs.existsSync(audioTempPath)) fs.unlinkSync(audioTempPath); } catch (e) {}
         };
 
-        // Log ffmpeg errors and clean up temp files
         let ffmpegStderr = '';
         ffmpegProcess.stderr.on('data', (chunk) => {
           ffmpegStderr += chunk.toString();
         });
         ffmpegProcess.on('error', (err) => {
-          console.error('ffmpegProcess video mux spawn/execution error:', err);
+          console.error('[MP4-MUX] ffmpeg error:', err);
           cleanup();
         });
         ffmpegProcess.on('close', (code) => {
           if (code !== 0) {
-            console.error(`ffmpeg process exited with code ${code}. Stderr: ${ffmpegStderr}`);
+            console.error(`[MP4-MUX] ffmpeg exited with code ${code}. Stderr: ${ffmpegStderr}`);
           }
           cleanup();
         });
 
-        // Kill ffmpeg process and clean up on client abort
         if (request.signal) {
           request.signal.addEventListener('abort', () => {
-            console.log('Client aborted download, killing ffmpeg process...');
+            console.log('[MP4-MUX] Client aborted, cleaning up...');
             ffmpegProcess.kill('SIGKILL');
             cleanup();
           });
         }
       } else {
-        // Direct stream download for combined format (no FFmpeg needed)
-        const tempPath = path.join(tempDir, `yt_combined_${videoId}_${Date.now()}.mp4`);
-        console.log(`Downloading combined video stream via youtubei.js`);
-        const videoStream = await info.download({ type: 'video', quality: `${quality}p` });
-        await saveStreamToFile(videoStream, tempPath, request.signal);
-
-        const readStream = fs.createReadStream(tempPath);
-        webStream = Readable.toWeb(readStream);
+        // ─── Combined format (no muxing): stream directly to client
+        //     Pipe YouTube stream → client with zero temp files.
+        console.log(`[MP4-DIRECT] Streaming combined format for ${videoId}`);
+        const videoStream = await info.download({ type: 'video+audio', quality: `${quality}p` });
+        webStream = videoStream;
         contentType = 'video/mp4';
         extension = 'mp4';
-
-        readStream.on('close', () => {
-          try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch (e) {}
-        });
-
-        if (request.signal) {
-          request.signal.addEventListener('abort', () => {
-            console.log('Client aborted download, cleaning up...');
-            readStream.destroy();
-            try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch (e) {}
-          });
-        }
       }
     }
 
