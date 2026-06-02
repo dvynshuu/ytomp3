@@ -28,75 +28,31 @@ function sanitizeFilename(name: string) {
 }
 
 /**
- * Downloads a YouTube media stream in parallel using HTTP range chunks.
- * This bypasses YouTube's rate-limiting/bandwidth throttling completely.
+ * Saves a web ReadableStream to a local file.
  */
-async function downloadFormatInParallel(
-  decipheredUrl: string,
-  contentLength: number,
+async function saveStreamToFile(
+  stream: any,
   outputPath: string,
   requestSignal?: AbortSignal
 ) {
-  // If content length is not available or too small, fall back to a single request
-  if (!contentLength || contentLength <= 0) {
-    const res = await fetch(decipheredUrl, { signal: requestSignal });
-    if (!res.ok) throw new Error(`Fetch failed with status ${res.status}`);
-    const arrayBuffer = await res.arrayBuffer();
-    await fs.promises.writeFile(outputPath, Buffer.from(arrayBuffer));
-    return;
-  }
+  const writeStream = fs.createWriteStream(outputPath);
+  const nodeStream = Readable.fromWeb(stream as any);
 
-  // Pre-allocate file space to allow random-access parallel writes
-  const fd = fs.openSync(outputPath, 'w');
-  fs.writeSync(fd, Buffer.alloc(1), 0, 1, contentLength - 1);
-  fs.closeSync(fd);
+  return new Promise<void>((resolve, reject) => {
+    nodeStream.pipe(writeStream);
+    writeStream.on('finish', () => resolve());
+    writeStream.on('error', (err) => reject(err));
+    nodeStream.on('error', (err) => reject(err));
 
-  const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks for high-speed download
-  const promises: Promise<void>[] = [];
-  let offset = 0;
-
-  while (offset < contentLength) {
-    const start = offset;
-    const end = Math.min(offset + CHUNK_SIZE - 1, contentLength - 1);
-
-    const downloadChunk = async () => {
-      if (requestSignal?.aborted) return;
-      const res = await fetch(`${decipheredUrl}&range=${start}-${end}`, {
-        signal: requestSignal
+    if (requestSignal) {
+      requestSignal.addEventListener('abort', () => {
+        writeStream.close();
+        nodeStream.destroy();
+        try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch (e) {}
+        reject(new Error('Download aborted by user'));
       });
-      if (!res.ok) {
-        throw new Error(`Failed to fetch chunk ${start}-${end}: HTTP ${res.status}`);
-      }
-
-      const arrayBuffer = await res.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-
-      const writeStream = fs.createWriteStream(outputPath, {
-        flags: 'r+',
-        start: start
-      });
-
-      await new Promise<void>((resolve, reject) => {
-        writeStream.write(buffer, (err) => {
-          if (err) reject(err);
-          else resolve();
-        });
-      });
-      writeStream.close();
-    };
-
-    promises.push(downloadChunk());
-    offset += CHUNK_SIZE;
-  }
-
-  try {
-    await Promise.all(promises);
-  } catch (err) {
-    try {
-      if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
-    } catch (e) {}
-    throw err;
-  }
+    }
+  });
 }
 
 export async function GET({ request }: { request: Request }) {
@@ -152,19 +108,12 @@ export async function GET({ request }: { request: Request }) {
     const tempDir = os.tmpdir();
 
     if (format === 'mp3') {
-      // Find the absolute best audio-only stream (Opus or AAC)
-      const audioFormat = info.chooseFormat({ type: 'audio', quality: 'best' });
-      if (!audioFormat) {
-        throw new Error('No audio format found for this video');
-      }
-
-      const audioUrl = await audioFormat.decipher(yt.session.player);
-      const targetBitrate = quality || '192';
       const audioTempPath = path.join(tempDir, `yt_audio_${videoId}_${Date.now()}.m4a`);
+      console.log(`Downloading audio stream via youtubei.js for video ${videoId}`);
+      const ytStream = await info.download({ type: 'audio', quality: 'best' });
+      await saveStreamToFile(ytStream, audioTempPath, request.signal);
 
-      console.log(`Downloading audio stream in parallel chunks (itag: ${audioFormat.itag}) for video ${videoId}`);
-      await downloadFormatInParallel(audioUrl, Number(audioFormat.content_length), audioTempPath, request.signal);
-
+      const targetBitrate = quality || '192';
       console.log(`Transcoding downloaded local audio to MP3 at ${targetBitrate}kbps`);
       // Spawn FFmpeg to transcode to MP3 on-the-fly
       const ffmpegProcess = spawn(ffmpegPath || 'ffmpeg', [
@@ -204,7 +153,6 @@ export async function GET({ request }: { request: Request }) {
     } else {
       // MP4 Video format selection
       let videoFormat: any;
-      let audioFormat: any;
       let needsMuxing = false;
 
       // Select format based on quality
@@ -252,25 +200,19 @@ export async function GET({ request }: { request: Request }) {
       }
 
       if (needsMuxing) {
-        audioFormat = info.chooseFormat({ type: 'audio', quality: 'best', format: 'mp4' }) ||
-                      info.chooseFormat({ type: 'audio', quality: 'best' });
-        if (!audioFormat) {
-          throw new Error('No audio track found to mux with video.');
-        }
-
-        const videoUrl = await videoFormat.decipher(yt.session.player);
-        const audioUrl = await audioFormat.decipher(yt.session.player);
-
         const videoTempPath = path.join(tempDir, `yt_video_${videoId}_${Date.now()}.mp4`);
         const audioTempPath = path.join(tempDir, `yt_audio_${videoId}_${Date.now()}.m4a`);
 
-        console.log(`Downloading video and audio streams in parallel chunks for video ${videoId}`);
+        console.log(`Downloading video and audio streams via youtubei.js for video ${videoId}`);
+        const videoStream = await info.download({ type: 'video', quality: `${quality}p` });
+        const audioStream = await info.download({ type: 'audio', quality: 'best' });
+
         await Promise.all([
-          downloadFormatInParallel(videoUrl, Number(videoFormat.content_length), videoTempPath, request.signal),
-          downloadFormatInParallel(audioUrl, Number(audioFormat.content_length), audioTempPath, request.signal)
+          saveStreamToFile(videoStream, videoTempPath, request.signal),
+          saveStreamToFile(audioStream, audioTempPath, request.signal)
         ]);
 
-        console.log(`Muxing downloaded video (itag: ${videoFormat.itag}) and audio (itag: ${audioFormat.itag}) on-the-fly to MP4`);
+        console.log(`Muxing downloaded video and audio on-the-fly to MP4`);
         // Spawn FFmpeg to copy-mux streams on-the-fly
         const ffmpegProcess = spawn(ffmpegPath || 'ffmpeg', [
           '-hide_banner',
@@ -315,11 +257,10 @@ export async function GET({ request }: { request: Request }) {
         }
       } else {
         // Direct stream download for combined format (no FFmpeg needed)
-        const videoUrl = await videoFormat.decipher(yt.session.player);
         const tempPath = path.join(tempDir, `yt_combined_${videoId}_${Date.now()}.mp4`);
-
-        console.log(`Downloading combined video stream in parallel chunks (itag: ${videoFormat.itag})`);
-        await downloadFormatInParallel(videoUrl, Number(videoFormat.content_length), tempPath, request.signal);
+        console.log(`Downloading combined video stream via youtubei.js`);
+        const videoStream = await info.download({ type: 'video', quality: `${quality}p` });
+        await saveStreamToFile(videoStream, tempPath, request.signal);
 
         const readStream = fs.createReadStream(tempPath);
         webStream = Readable.toWeb(readStream);
