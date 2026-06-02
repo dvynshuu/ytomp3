@@ -1,4 +1,4 @@
-import { getInnertube, invalidateCache, CLIENT_TYPES, getInfoWithFallback } from '../../lib/innertube-cache';
+import { getInfoWithFallback, downloadStreamWithFallback } from '../../lib/innertube-cache';
 import ffmpegPath from 'ffmpeg-static';
 import { spawn } from 'child_process';
 import { Readable } from 'stream';
@@ -16,13 +16,6 @@ function getYouTubeID(url: string) {
 
 function sanitizeFilename(name: string) {
   return name.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim();
-}
-
-function isTimeoutError(err: any): boolean {
-  const msg = String(err?.message || err);
-  return msg.includes('fetch failed') || msg.includes('timeout') ||
-         err?.cause?.code === 'UND_ERR_CONNECT_TIMEOUT' ||
-         err?.code === 'UND_ERR_CONNECT_TIMEOUT';
 }
 
 /**
@@ -51,51 +44,6 @@ async function saveStreamToFile(
       });
     }
   });
-}
-
-// (getInfoWithFallback has been moved to src/lib/innertube-cache.ts)
-
-/**
- * Attempt to download a stream, falling back to different client types
- * if the CDN connection times out. Each fallback re-fetches video info
- * to get fresh CDN URLs pointing to different googlevideo servers.
- */
-async function downloadStreamWithFallback(
-  videoId: string,
-  downloadOptions: any,
-  startingClientIndex: number = 0
-): Promise<{ stream: any; info: any; clientType: string }> {
-  const errors: string[] = [];
-
-  for (let i = startingClientIndex; i < CLIENT_TYPES.length; i++) {
-    const clientType = CLIENT_TYPES[i];
-    try {
-      const yt = await getInnertube(clientType);
-      const info = await yt.getBasicInfo(videoId);
-
-      if (info.playability_status && info.playability_status.status !== 'OK') {
-        errors.push(`${clientType}: unplayable`);
-        continue;
-      }
-
-      console.log(`[Download] Trying ${clientType} client for stream...`);
-      const stream = await info.download(downloadOptions);
-      return { stream, info, clientType };
-    } catch (err: any) {
-      if (isTimeoutError(err)) {
-        console.warn(`[Download] ${clientType} CDN timed out, trying next client type...`);
-        invalidateCache(clientType);
-        errors.push(`${clientType}: CDN timeout`);
-        continue;
-      }
-      // Non-timeout error — might be a format issue, try next
-      console.warn(`[Download] ${clientType} download error: ${err?.message}`);
-      errors.push(`${clientType}: ${err?.message}`);
-      continue;
-    }
-  }
-
-  throw new Error(`All client types failed to download stream: ${errors.join('; ')}`);
 }
 
 export async function GET({ request }: { request: Request }) {

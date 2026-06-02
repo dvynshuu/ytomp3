@@ -28,7 +28,7 @@ const instanceCache = new Map<string, CachedInstance>();
 // ANDROID_VR/TV_EMBEDDED are fallbacks for age-restricted content.
 export const CLIENT_TYPES = ['ANDROID', 'WEB', 'ANDROID_VR', 'TV_EMBEDDED'] as const;
 
-function getAuthConfig() {
+export function getAuthConfig() {
   let cookie = process.env.YOUTUBE_COOKIE || undefined;
   if (cookie) {
     cookie = cookie.replace(/^(cookie|Cookie):\s*/i, '').trim().replace(/^["']|["']$/g, '').trim();
@@ -48,21 +48,21 @@ function getAuthConfig() {
 }
 
 /**
- * Get or create an Innertube instance for a specific client type.
- * Cached per client type for 30 minutes.
+ * Get or create an Innertube instance for a specific client type, with optional auth.
+ * Cached for 30 minutes.
  */
-export async function getInnertube(clientType?: string): Promise<Innertube> {
-  const auth = getAuthConfig();
-  // If cookie is set, always use MWEB (cookie-authenticated)
-  const resolvedType = auth.cookie ? 'MWEB' : (clientType || CLIENT_TYPES[0]);
+export async function getInnertube(clientType?: string, useAuth: boolean = true): Promise<Innertube> {
+  const auth = useAuth ? getAuthConfig() : { cookie: undefined, poToken: undefined, visitorData: undefined };
+  const resolvedType = clientType || (auth.cookie ? 'MWEB' : CLIENT_TYPES[0]);
   const now = Date.now();
+  const cacheKey = `${resolvedType}_${useAuth ? 'auth' : 'noauth'}`;
 
-  const cached = instanceCache.get(resolvedType);
+  const cached = instanceCache.get(cacheKey);
   if (cached && (now - cached.createdAt) < CACHE_TTL_MS) {
     return cached.instance;
   }
 
-  console.log(`[Innertube] Creating new ${resolvedType} client instance...`);
+  console.log(`[Innertube] Creating new ${resolvedType} client instance (auth: ${useAuth})...`);
   const instance = await Innertube.create({
     client_type: resolvedType as any,
     cookie: auth.cookie,
@@ -70,52 +70,121 @@ export async function getInnertube(clientType?: string): Promise<Innertube> {
     visitor_data: auth.visitorData
   });
 
-  instanceCache.set(resolvedType, { instance, createdAt: now });
+  instanceCache.set(cacheKey, { instance, createdAt: now });
   return instance;
 }
 
 /**
- * Invalidate cached instance for a specific client type (or all).
- * Forces a fresh Innertube.create() on next call.
+ * Invalidate cached instance for a specific client type and auth status.
  */
-export function invalidateCache(clientType?: string) {
+export function invalidateCache(clientType?: string, useAuth: boolean = true) {
   if (clientType) {
-    instanceCache.delete(clientType);
+    const cacheKey = `${clientType}_${useAuth ? 'auth' : 'noauth'}`;
+    instanceCache.delete(cacheKey);
   } else {
     instanceCache.clear();
   }
 }
 
-/**
- * Fetch video info with client-type fallback.
- * If the primary client gets blocked (e.g. "Sign in to confirm you're not a bot"),
- * we cycle through alternative client types to get active/unblocked access.
- */
-export async function getInfoWithFallback(videoId: string): Promise<{ info: any; clientType: string }> {
-  const errors: string[] = [];
+function isTimeoutError(err: any): boolean {
+  const msg = String(err?.message || err);
+  return msg.includes('fetch failed') || msg.includes('timeout') ||
+         err?.cause?.code === 'UND_ERR_CONNECT_TIMEOUT' ||
+         err?.code === 'UND_ERR_CONNECT_TIMEOUT';
+}
 
-  for (const clientType of CLIENT_TYPES) {
+interface ClientConfig {
+  type: string;
+  useAuth: boolean;
+}
+
+function getFallbackConfigs(): ClientConfig[] {
+  const auth = getAuthConfig();
+  const hasAuth = !!(auth.cookie || auth.poToken);
+  const configs: ClientConfig[] = [];
+
+  // If auth is provided, prioritize trying configurations with auth
+  if (hasAuth) {
+    for (const type of CLIENT_TYPES) {
+      configs.push({ type, useAuth: true });
+    }
+  }
+  // Then try configurations without auth
+  for (const type of CLIENT_TYPES) {
+    configs.push({ type, useAuth: false });
+  }
+
+  return configs;
+}
+
+/**
+ * Fetch video info with client-type fallback and auth fallback.
+ */
+export async function getInfoWithFallback(videoId: string): Promise<{ info: any; clientType: string; useAuth: boolean }> {
+  const errors: string[] = [];
+  const configs = getFallbackConfigs();
+
+  for (const config of configs) {
     try {
-      const yt = await getInnertube(clientType);
+      const yt = await getInnertube(config.type, config.useAuth);
       const info = await yt.getBasicInfo(videoId);
 
       if (info.playability_status && info.playability_status.status !== 'OK') {
         const reason = info.playability_status.reason || 'Video unplayable';
-        console.warn(`[Fallback] ${clientType} returned unplayable: ${reason}`);
-        errors.push(`${clientType}: ${reason}`);
+        console.warn(`[Fallback] ${config.type} (auth: ${config.useAuth}) returned unplayable: ${reason}`);
+        errors.push(`${config.type}(auth:${config.useAuth}): ${reason}`);
         continue;
       }
 
-      return { info, clientType };
+      return { info, clientType: config.type, useAuth: config.useAuth };
     } catch (err: any) {
-      console.warn(`[Fallback] ${clientType} getBasicInfo failed: ${err?.message}`);
-      errors.push(`${clientType}: ${err?.message}`);
-      invalidateCache(clientType);
+      console.warn(`[Fallback] ${config.type} (auth: ${config.useAuth}) getBasicInfo failed: ${err?.message}`);
+      errors.push(`${config.type}(auth:${config.useAuth}): ${err?.message}`);
+      invalidateCache(config.type, config.useAuth);
       continue;
     }
   }
 
   throw new Error(`All client types failed to fetch video info: ${errors.join('; ')}`);
+}
+
+/**
+ * Attempt to download a stream, falling back through client types and auth options.
+ */
+export async function downloadStreamWithFallback(
+  videoId: string,
+  downloadOptions: any
+): Promise<{ stream: any; info: any; clientType: string; useAuth: boolean }> {
+  const errors: string[] = [];
+  const configs = getFallbackConfigs();
+
+  for (const config of configs) {
+    try {
+      const yt = await getInnertube(config.type, config.useAuth);
+      const info = await yt.getBasicInfo(videoId);
+
+      if (info.playability_status && info.playability_status.status !== 'OK') {
+        errors.push(`${config.type}(auth:${config.useAuth}): unplayable`);
+        continue;
+      }
+
+      console.log(`[Download] Trying ${config.type} client (auth: ${config.useAuth}) for stream...`);
+      const stream = await info.download(downloadOptions);
+      return { stream, info, clientType: config.type, useAuth: config.useAuth };
+    } catch (err: any) {
+      if (isTimeoutError(err)) {
+        console.warn(`[Download] ${config.type} (auth: ${config.useAuth}) CDN timed out, trying fallback...`);
+        invalidateCache(config.type, config.useAuth);
+        errors.push(`${config.type}(auth:${config.useAuth}): CDN timeout`);
+        continue;
+      }
+      console.warn(`[Download] ${config.type} (auth: ${config.useAuth}) download error: ${err?.message}`);
+      errors.push(`${config.type}(auth:${config.useAuth}): ${err?.message}`);
+      continue;
+    }
+  }
+
+  throw new Error(`All client types failed to download stream: ${errors.join('; ')}`);
 }
 
 // Eagerly warm the primary client on module load
