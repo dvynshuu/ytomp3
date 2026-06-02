@@ -158,7 +158,7 @@ export async function GET({ request }: { request: Request }) {
         throw new Error('No audio format found for this video');
       }
 
-      const audioUrl = await audioFormat.decipher(yt.session.actions.sig_helper);
+      const audioUrl = await audioFormat.decipher(yt.session.player);
       const targetBitrate = quality || '192';
       const audioTempPath = path.join(tempDir, `yt_audio_${videoId}_${Date.now()}.m4a`);
 
@@ -258,8 +258,8 @@ export async function GET({ request }: { request: Request }) {
           throw new Error('No audio track found to mux with video.');
         }
 
-        const videoUrl = await videoFormat.decipher(yt.session.actions.sig_helper);
-        const audioUrl = await audioFormat.decipher(yt.session.actions.sig_helper);
+        const videoUrl = await videoFormat.decipher(yt.session.player);
+        const audioUrl = await audioFormat.decipher(yt.session.player);
 
         const videoTempPath = path.join(tempDir, `yt_video_${videoId}_${Date.now()}.mp4`);
         const audioTempPath = path.join(tempDir, `yt_audio_${videoId}_${Date.now()}.m4a`);
@@ -315,7 +315,7 @@ export async function GET({ request }: { request: Request }) {
         }
       } else {
         // Direct stream download for combined format (no FFmpeg needed)
-        const videoUrl = await videoFormat.decipher(yt.session.actions.sig_helper);
+        const videoUrl = await videoFormat.decipher(yt.session.player);
         const tempPath = path.join(tempDir, `yt_combined_${videoId}_${Date.now()}.mp4`);
 
         console.log(`Downloading combined video stream in parallel chunks (itag: ${videoFormat.itag})`);
