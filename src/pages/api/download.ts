@@ -114,12 +114,27 @@ export async function GET({ request }: { request: Request }) {
     return new Response('Invalid YouTube URL', { status: 400 });
   }
 
+  let cookie = process.env.YOUTUBE_COOKIE || undefined;
+  if (cookie) {
+    cookie = cookie.replace(/^(cookie|Cookie):\s*/i, '').trim().replace(/^["']|["']$/g, '').trim();
+  }
+
+  let poToken = process.env.PO_TOKEN || undefined;
+  if (poToken) {
+    poToken = poToken.replace(/^(po_token|poToken):\s*/i, '').trim().replace(/^["']|["']$/g, '').trim();
+  }
+
+  let visitorData = process.env.VISITOR_DATA || undefined;
+  if (visitorData) {
+    visitorData = visitorData.replace(/^(visitor_data|visitorData):\s*/i, '').trim().replace(/^["']|["']$/g, '').trim();
+  }
+
   try {
     const yt = await Innertube.create({
       client_type: 'ANDROID_VR',
-      cookie: process.env.YOUTUBE_COOKIE || undefined,
-      po_token: process.env.PO_TOKEN || undefined,
-      visitor_data: process.env.VISITOR_DATA || undefined
+      cookie,
+      po_token: poToken,
+      visitor_data: visitorData
     });
     const info = await yt.getBasicInfo(videoId);
 
