@@ -117,6 +117,7 @@ export async function GET({ request }: { request: Request }) {
   try {
     const yt = await Innertube.create({
       client_type: 'ANDROID_VR',
+      cookie: process.env.YOUTUBE_COOKIE || undefined,
       po_token: process.env.PO_TOKEN || undefined,
       visitor_data: process.env.VISITOR_DATA || undefined
     });
