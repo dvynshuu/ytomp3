@@ -71,6 +71,21 @@ export async function GET() {
     diagnostics.innertube.getBasicInfo = 'success';
     diagnostics.innertube.title = info.basic_info.title;
 
+    // Analyze formats
+    const formats = [
+      ...(info.streaming_data?.formats || []),
+      ...(info.streaming_data?.adaptive_formats || [])
+    ];
+    diagnostics.formatsCount = formats.length;
+    diagnostics.formatsList = formats.map((f: any) => ({
+      itag: f.itag,
+      quality: f.quality_label || f.quality || 'unknown',
+      mimeType: f.mime_type,
+      hasUrl: !!f.url,
+      hasCipher: !!(f.signature_cipher || f.cipher),
+      isSabr: !f.url && !(f.signature_cipher || f.cipher)
+    }));
+
     // Test stream download initialization
     try {
       const stream = await info.download({ type: 'audio', quality: 'best' });
