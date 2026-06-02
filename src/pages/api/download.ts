@@ -135,6 +135,10 @@ export async function GET({ request }: { request: Request }) {
       ffmpegProcess.stderr.on('data', (chunk) => {
         ffmpegStderr += chunk.toString();
       });
+      ffmpegProcess.on('error', (err) => {
+        console.error('ffmpegProcess spawn/execution error:', err);
+        try { if (fs.existsSync(audioTempPath)) fs.unlinkSync(audioTempPath); } catch (e) {}
+      });
       ffmpegProcess.on('close', (code) => {
         if (code !== 0) {
           console.error(`ffmpeg process exited with code ${code}. Stderr: ${ffmpegStderr}`);
@@ -240,6 +244,10 @@ export async function GET({ request }: { request: Request }) {
         ffmpegProcess.stderr.on('data', (chunk) => {
           ffmpegStderr += chunk.toString();
         });
+        ffmpegProcess.on('error', (err) => {
+          console.error('ffmpegProcess video mux spawn/execution error:', err);
+          cleanup();
+        });
         ffmpegProcess.on('close', (code) => {
           if (code !== 0) {
             console.error(`ffmpeg process exited with code ${code}. Stderr: ${ffmpegStderr}`);
@@ -288,7 +296,8 @@ export async function GET({ request }: { request: Request }) {
       headers: {
         'Content-Disposition': `attachment; filename="${asciiTitle}.${extension}"; filename*=UTF-8''${encodeURIComponent(safeTitle)}.${extension}`,
         'Content-Type': contentType,
-        'Cache-Control': 'no-store'
+        'Cache-Control': 'no-store',
+        'X-App-Version': '2.1.0'
       }
     });
   } catch (error: any) {
