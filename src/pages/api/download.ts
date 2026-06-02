@@ -46,6 +46,31 @@ async function saveStreamToFile(
   });
 }
 
+/**
+ * Download helper with retry logic to handle transient googlevideo network timeouts.
+ */
+async function downloadWithRetry(
+  info: any,
+  options: any,
+  retries = 3,
+  delayMs = 1000
+): Promise<any> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await info.download(options);
+    } catch (err: any) {
+      const isTimeout = err?.message?.includes('timeout') || err?.code === 'UND_ERR_CONNECT_TIMEOUT' || String(err).includes('fetch failed');
+      if (isTimeout && i < retries - 1) {
+        console.warn(`[Stream-Retry] Connection failed (attempt ${i + 1}/${retries}). Retrying in ${delayMs}ms... Error: ${err?.message || err}`);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        delayMs *= 2; // Exponential backoff
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 export async function GET({ request }: { request: Request }) {
   const urlParams = new URL(request.url).searchParams;
   const videoUrl = urlParams.get('url');
@@ -89,8 +114,8 @@ export async function GET({ request }: { request: Request }) {
       const targetBitrate = quality || '192';
       console.log(`[MP3] Streaming audio → ffmpeg pipeline for ${videoId} at ${targetBitrate}kbps`);
 
-      // Get the YouTube audio stream (web ReadableStream)
-      const ytStream = await info.download({ type: 'audio', quality: 'best' });
+      // Get the YouTube audio stream (web ReadableStream) with robust retry
+      const ytStream = await downloadWithRetry(info, { type: 'audio', quality: 'best' });
       const nodeReadable = Readable.fromWeb(ytStream as any);
 
       // Spawn FFmpeg reading from stdin (pipe:0) instead of a temp file
@@ -204,10 +229,10 @@ export async function GET({ request }: { request: Request }) {
 
         console.log(`[MP4-MUX] Downloading video+audio streams in parallel for ${videoId}`);
 
-        // Start both downloads concurrently
+        // Start both downloads concurrently with retry protection
         const [videoStream, audioStream] = await Promise.all([
-          info.download({ type: 'video', quality: `${quality}p` }),
-          info.download({ type: 'audio', quality: 'best' })
+          downloadWithRetry(info, { type: 'video', quality: `${quality}p` }),
+          downloadWithRetry(info, { type: 'audio', quality: 'best' })
         ]);
 
         // Save both to disk in parallel
@@ -264,7 +289,7 @@ export async function GET({ request }: { request: Request }) {
         // ─── Combined format (no muxing): stream directly to client
         //     Pipe YouTube stream → client with zero temp files.
         console.log(`[MP4-DIRECT] Streaming combined format for ${videoId}`);
-        const videoStream = await info.download({ type: 'video+audio', quality: `${quality}p` });
+        const videoStream = await downloadWithRetry(info, { type: 'video+audio', quality: `${quality}p` });
         webStream = videoStream;
         contentType = 'video/mp4';
         extension = 'mp4';
