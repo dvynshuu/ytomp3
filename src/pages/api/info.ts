@@ -64,7 +64,7 @@ export async function GET({ request }: { request: Request }) {
 
   try {
     const yt = await Innertube.create({
-      client_type: 'ANDROID_VR',
+      client_type: cookie ? 'WEB' : 'ANDROID_VR',
       cookie,
       po_token: poToken,
       visitor_data: visitorData
