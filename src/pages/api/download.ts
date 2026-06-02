@@ -1,4 +1,4 @@
-import { getInnertube, invalidateCache, CLIENT_TYPES } from '../../lib/innertube-cache';
+import { getInnertube, invalidateCache, CLIENT_TYPES, getInfoWithFallback } from '../../lib/innertube-cache';
 import ffmpegPath from 'ffmpeg-static';
 import { spawn } from 'child_process';
 import { Readable } from 'stream';
@@ -53,38 +53,7 @@ async function saveStreamToFile(
   });
 }
 
-/**
- * Fetch video info with client-type fallback.
- * If the primary client's CDN URLs timeout during download, we cycle
- * through alternative client types to get fresh CDN URLs from different
- * googlevideo servers.
- */
-async function getInfoWithFallback(videoId: string) {
-  const errors: string[] = [];
-
-  for (const clientType of CLIENT_TYPES) {
-    try {
-      const yt = await getInnertube(clientType);
-      const info = await yt.getBasicInfo(videoId);
-
-      if (info.playability_status && info.playability_status.status !== 'OK') {
-        const reason = info.playability_status.reason || 'Video unplayable';
-        console.warn(`[Fallback] ${clientType} returned unplayable: ${reason}`);
-        errors.push(`${clientType}: ${reason}`);
-        continue;
-      }
-
-      return { info, clientType };
-    } catch (err: any) {
-      console.warn(`[Fallback] ${clientType} getBasicInfo failed: ${err?.message}`);
-      errors.push(`${clientType}: ${err?.message}`);
-      invalidateCache(clientType);
-      continue;
-    }
-  }
-
-  throw new Error(`All client types failed to fetch video info: ${errors.join('; ')}`);
-}
+// (getInfoWithFallback has been moved to src/lib/innertube-cache.ts)
 
 /**
  * Attempt to download a stream, falling back to different client types
@@ -148,6 +117,7 @@ export async function GET({ request }: { request: Request }) {
     let webStream: any;
     let contentType = '';
     let extension = '';
+    let workingInfo: any;
 
     const tempDir = os.tmpdir();
 
@@ -161,10 +131,11 @@ export async function GET({ request }: { request: Request }) {
       const targetBitrate = quality || '192';
       console.log(`[MP3] Starting download for ${videoId} at ${targetBitrate}kbps`);
 
-      const { stream: ytStream } = await downloadStreamWithFallback(
+      const { stream: ytStream, info: mp3Info } = await downloadStreamWithFallback(
         videoId,
         { type: 'audio', quality: 'best' }
       );
+      workingInfo = mp3Info;
       const nodeReadable = Readable.fromWeb(ytStream as any);
 
       // Spawn FFmpeg reading from stdin (pipe:0)
@@ -223,6 +194,7 @@ export async function GET({ request }: { request: Request }) {
       // MP4: Get info first (with fallback), then select format + download
       // ═══════════════════════════════════════════════════════════════════
       const { info, clientType } = await getInfoWithFallback(videoId);
+      workingInfo = info;
       const title = info.basic_info.title || 'YouTube Download';
 
       let videoFormat: any;
@@ -343,10 +315,7 @@ export async function GET({ request }: { request: Request }) {
     }
 
     // Get title for the Content-Disposition header
-    // (fetch info from whatever client worked — cheap since cached)
-    const yt = await getInnertube();
-    const titleInfo = await yt.getBasicInfo(videoId);
-    const title = titleInfo.basic_info.title || 'YouTube Download';
+    const title = workingInfo?.basic_info?.title || 'YouTube Download';
     const safeTitle = sanitizeFilename(title);
     const asciiTitle = safeTitle.replace(/[^\x00-\x7F]/g, '').replace(/\s+/g, ' ').trim() || 'download';
 

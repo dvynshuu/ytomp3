@@ -86,5 +86,38 @@ export function invalidateCache(clientType?: string) {
   }
 }
 
+/**
+ * Fetch video info with client-type fallback.
+ * If the primary client gets blocked (e.g. "Sign in to confirm you're not a bot"),
+ * we cycle through alternative client types to get active/unblocked access.
+ */
+export async function getInfoWithFallback(videoId: string): Promise<{ info: any; clientType: string }> {
+  const errors: string[] = [];
+
+  for (const clientType of CLIENT_TYPES) {
+    try {
+      const yt = await getInnertube(clientType);
+      const info = await yt.getBasicInfo(videoId);
+
+      if (info.playability_status && info.playability_status.status !== 'OK') {
+        const reason = info.playability_status.reason || 'Video unplayable';
+        console.warn(`[Fallback] ${clientType} returned unplayable: ${reason}`);
+        errors.push(`${clientType}: ${reason}`);
+        continue;
+      }
+
+      return { info, clientType };
+    } catch (err: any) {
+      console.warn(`[Fallback] ${clientType} getBasicInfo failed: ${err?.message}`);
+      errors.push(`${clientType}: ${err?.message}`);
+      invalidateCache(clientType);
+      continue;
+    }
+  }
+
+  throw new Error(`All client types failed to fetch video info: ${errors.join('; ')}`);
+}
+
 // Eagerly warm the primary client on module load
 getInnertube().catch(() => {});
+

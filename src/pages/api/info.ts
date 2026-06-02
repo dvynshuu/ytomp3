@@ -1,4 +1,4 @@
-import { getInnertube } from '../../lib/innertube-cache';
+import { getInfoWithFallback } from '../../lib/innertube-cache';
 
 export const prerender = false;
 
@@ -40,17 +40,7 @@ export async function GET({ request }: { request: Request }) {
   }
 
   try {
-    const yt = await getInnertube();
-    const info = await yt.getBasicInfo(videoId);
-
-    if (info.playability_status && info.playability_status.status !== 'OK') {
-      return new Response(JSON.stringify({ 
-        error: info.playability_status.reason || 'This YouTube video is restricted or unplayable.'
-      }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
+    const { info } = await getInfoWithFallback(videoId);
 
     const title = info.basic_info.title || 'YouTube Video';
     const author = info.basic_info.author || 'Unknown Creator';
