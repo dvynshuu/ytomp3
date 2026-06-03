@@ -1,4 +1,4 @@
-import { getInfoWithFallback } from '../../lib/innertube-cache';
+import { getInfoWithFallback, findVideoFormat } from '../../lib/innertube-cache';
 
 export const prerender = false;
 
@@ -51,6 +51,49 @@ export async function GET({ request }: { request: Request }) {
     const thumbnails = info.basic_info.thumbnail || [];
     const thumbnail = thumbnails.length > 0 ? thumbnails[thumbnails.length - 1].url : `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
 
+    // Calculate actual format sizes
+    const getFormatSizeMB = (format: any) => {
+      if (!format) return 0;
+      if (format.content_length) {
+        return Number(format.content_length) / (1024 * 1024);
+      }
+      if (format.bitrate && durationSeconds) {
+        return (Number(format.bitrate) * durationSeconds) / (8 * 1024 * 1024);
+      }
+      return 0;
+    };
+
+    const audioFormats = (info.streaming_data?.adaptive_formats || []).filter(
+      (f: any) => f.has_audio && !f.has_video
+    );
+    const bestAudioFormat = audioFormats.sort((a: any, b: any) => (a.bitrate || 0) - (b.bitrate || 0))[0];
+    const audioSizeMB = getFormatSizeMB(bestAudioFormat);
+
+    const sizes: Record<string, number> = {};
+    const qualities = ['1080', '720', '480', '360'];
+
+    for (const q of qualities) {
+      let videoFormat: any;
+      let needsMuxing = true;
+
+      if (q === '720') {
+        videoFormat = info.streaming_data?.formats?.find((f: any) => f.itag === 22);
+        if (videoFormat) needsMuxing = false;
+      } else if (q === '360') {
+        videoFormat = info.streaming_data?.formats?.find((f: any) => f.itag === 18);
+        if (videoFormat) needsMuxing = false;
+      }
+
+      if (!videoFormat) {
+        videoFormat = findVideoFormat(info, q);
+      }
+
+      if (videoFormat) {
+        const videoSizeMB = getFormatSizeMB(videoFormat);
+        sizes[q] = needsMuxing ? (videoSizeMB + audioSizeMB) : videoSizeMB;
+      }
+    }
+
     // Return metadata
     return new Response(JSON.stringify({
       success: true,
@@ -59,7 +102,8 @@ export async function GET({ request }: { request: Request }) {
       author,
       durationSeconds,
       durationFormatted,
-      thumbnail
+      thumbnail,
+      sizes
     }), {
       status: 200,
       headers: {

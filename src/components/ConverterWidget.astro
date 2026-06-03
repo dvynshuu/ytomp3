@@ -333,9 +333,13 @@
         sizeMB = (data.durationSeconds * Number(selectedQuality)) / 8000;
         qualityLabel = `${selectedQuality}kbps`;
       } else {
-        const mins = data.durationSeconds / 60;
-        const sizePerMin: Record<string, number> = { '1080': 15.0, '720': 8.0, '480': 4.5, '360': 2.5 };
-        sizeMB = mins * (sizePerMin[selectedQuality] || 8.0);
+        if (data.sizes && data.sizes[selectedQuality]) {
+          sizeMB = data.sizes[selectedQuality];
+        } else {
+          const mins = data.durationSeconds / 60;
+          const sizePerMin: Record<string, number> = { '1080': 15.0, '720': 8.0, '480': 4.5, '360': 2.5 };
+          sizeMB = mins * (sizePerMin[selectedQuality] || 8.0);
+        }
         qualityLabel = `${selectedQuality}p`;
       }
 

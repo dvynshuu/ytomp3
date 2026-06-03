@@ -190,3 +190,29 @@ export async function downloadStreamWithFallback(
 // Eagerly warm the primary client on module load
 getInnertube().catch(() => {});
 
+export function findVideoFormat(info: any, qualityPrefix: string) {
+  const formats = [
+    ...info.streaming_data?.formats || [],
+    ...info.streaming_data?.adaptive_formats || []
+  ];
+
+  // Filter for video formats matching qualityPrefix
+  const candidates = formats.filter((f: any) => {
+    if (!f.has_video) return false;
+    const label = f.quality_label || f.quality || '';
+    return label.startsWith(qualityPrefix);
+  });
+
+  if (candidates.length === 0) return undefined;
+
+  // Prioritize mp4 over other containers (e.g. webm)
+  const mp4Candidates = candidates.filter((f: any) => f.mime_type?.includes('mp4'));
+  if (mp4Candidates.length > 0) {
+    return mp4Candidates.sort((a: any, b: any) => (a.bitrate || 0) - (b.bitrate || 0))[0];
+  }
+
+  // Fallback to any matching format sorted by bitrate ascending
+  return candidates.sort((a: any, b: any) => (a.bitrate || 0) - (b.bitrate || 0))[0];
+}
+
+

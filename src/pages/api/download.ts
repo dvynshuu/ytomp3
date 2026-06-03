@@ -1,4 +1,4 @@
-import { getInfoWithFallback, downloadStreamWithFallback } from '../../lib/innertube-cache';
+import { getInfoWithFallback, downloadStreamWithFallback, findVideoFormat } from '../../lib/innertube-cache';
 import ffmpegPath from 'ffmpeg-static';
 import { spawn } from 'child_process';
 import { Readable } from 'stream';
@@ -17,6 +17,16 @@ function getYouTubeID(url: string) {
 function sanitizeFilename(name: string) {
   return name.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim();
 }
+
+function safeChooseFormat(info: any, options: any) {
+  try {
+    return info.chooseFormat(options);
+  } catch (error) {
+    return undefined;
+  }
+}
+
+
 
 /**
  * Saves a web ReadableStream to a local file.
@@ -148,30 +158,18 @@ export async function GET({ request }: { request: Request }) {
       let videoFormat: any;
       let needsMuxing = false;
 
-      if (quality === '1080') {
-        videoFormat = info.chooseFormat({ type: 'video', quality: '1080p', format: 'mp4' }) ||
-                      info.chooseFormat({ type: 'video', quality: '1080p' });
-        needsMuxing = true;
-      } else if (quality === '720') {
-        videoFormat = info.streaming_data?.formats?.find((f: any) => f.itag === 22);
-        if (videoFormat) {
-          needsMuxing = false;
-        } else {
-          videoFormat = info.chooseFormat({ type: 'video', quality: '720p', format: 'mp4' }) ||
-                        info.chooseFormat({ type: 'video', quality: '720p' });
-          needsMuxing = true;
+      if (quality === '1080' || quality === '720' || quality === '480' || quality === '360') {
+        // For 720p and 360p, first check if combined format exists
+        if (quality === '720') {
+          videoFormat = info.streaming_data?.formats?.find((f: any) => f.itag === 22);
+        } else if (quality === '360') {
+          videoFormat = info.streaming_data?.formats?.find((f: any) => f.itag === 18);
         }
-      } else if (quality === '480') {
-        videoFormat = info.chooseFormat({ type: 'video', quality: '480p', format: 'mp4' }) ||
-                      info.chooseFormat({ type: 'video', quality: '480p' });
-        needsMuxing = true;
-      } else if (quality === '360') {
-        videoFormat = info.streaming_data?.formats?.find((f: any) => f.itag === 18);
+
         if (videoFormat) {
           needsMuxing = false;
         } else {
-          videoFormat = info.chooseFormat({ type: 'video', quality: '360p', format: 'mp4' }) ||
-                        info.chooseFormat({ type: 'video', quality: '360p' });
+          videoFormat = findVideoFormat(info, quality);
           needsMuxing = true;
         }
       }
@@ -179,8 +177,12 @@ export async function GET({ request }: { request: Request }) {
       if (!videoFormat) {
         videoFormat = info.streaming_data?.formats?.find((f: any) => f.itag === 22) ||
                       info.streaming_data?.formats?.find((f: any) => f.itag === 18) ||
-                      info.chooseFormat({ type: 'video', quality: 'best', format: 'mp4' }) ||
-                      info.chooseFormat({ type: 'video', quality: 'best' });
+                      findVideoFormat(info, '1080') ||
+                      findVideoFormat(info, '720') ||
+                      findVideoFormat(info, '480') ||
+                      findVideoFormat(info, '360') ||
+                      safeChooseFormat(info, { type: 'video', quality: 'best', format: 'mp4' }) ||
+                      safeChooseFormat(info, { type: 'video', quality: 'best' });
         needsMuxing = !info.streaming_data?.formats?.find((f: any) => f.itag === videoFormat?.itag);
       }
 
@@ -188,15 +190,17 @@ export async function GET({ request }: { request: Request }) {
         throw new Error(`Requested video quality ${quality}p is not available.`);
       }
 
+      const targetQuality = videoFormat.quality_label || videoFormat.quality || `${quality}p`;
+
       if (needsMuxing) {
         const videoTempPath = path.join(tempDir, `yt_video_${videoId}_${Date.now()}.mp4`);
         const audioTempPath = path.join(tempDir, `yt_audio_${videoId}_${Date.now()}.m4a`);
 
-        console.log(`[MP4-MUX] Downloading video+audio in parallel for ${videoId} via ${clientType}`);
+        console.log(`[MP4-MUX] Downloading video+audio in parallel for ${videoId} via ${clientType} (quality: ${targetQuality})`);
 
         // Download both streams with individual client-type fallback
         const [videoResult, audioResult] = await Promise.all([
-          downloadStreamWithFallback(videoId, { type: 'video', quality: `${quality}p` }),
+          downloadStreamWithFallback(videoId, { type: 'video', quality: targetQuality }),
           downloadStreamWithFallback(videoId, { type: 'audio', quality: 'best' })
         ]);
 
@@ -251,10 +255,10 @@ export async function GET({ request }: { request: Request }) {
         }
       } else {
         // Combined format — try download with fallback
-        console.log(`[MP4-DIRECT] Streaming combined format for ${videoId}`);
+        console.log(`[MP4-DIRECT] Streaming combined format for ${videoId} (quality: ${targetQuality})`);
         const { stream: videoStream } = await downloadStreamWithFallback(
           videoId,
-          { type: 'video+audio', quality: `${quality}p` }
+          { type: 'video+audio', quality: targetQuality }
         );
         webStream = videoStream;
         contentType = 'video/mp4';
