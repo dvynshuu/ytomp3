@@ -1,287 +1,100 @@
-import { getInfoWithFallback, downloadStreamWithFallback, findVideoFormat } from '../../lib/innertube-cache';
-import ffmpegPath from 'ffmpeg-static';
-import { spawn } from 'child_process';
+import { redisConnection } from '../../lib/redis';
+import { mp3Dir, mp4Dir } from '../../lib/queue';
 import { Readable } from 'stream';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 
 export const prerender = false;
 
-function getYouTubeID(url: string) {
-  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
-  const match = url.match(regExp);
-  return (match && match[2].length === 11) ? match[2] : null;
-}
+const CACHE_DIR = process.env.CACHE_DIR || path.join(process.cwd(), '.cache', 'downloads');
 
 function sanitizeFilename(name: string) {
   return name.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim();
 }
 
-function safeChooseFormat(info: any, options: any) {
-  try {
-    return info.chooseFormat(options);
-  } catch (error) {
-    return undefined;
-  }
-}
-
-
-
-/**
- * Saves a web ReadableStream to a local file.
- */
-async function saveStreamToFile(
-  stream: any,
-  outputPath: string,
-  requestSignal?: AbortSignal
-) {
-  const writeStream = fs.createWriteStream(outputPath);
-  const nodeStream = Readable.fromWeb(stream as any);
-
-  return new Promise<void>((resolve, reject) => {
-    nodeStream.pipe(writeStream);
-    writeStream.on('finish', () => resolve());
-    writeStream.on('error', (err) => reject(err));
-    nodeStream.on('error', (err) => reject(err));
-
-    if (requestSignal) {
-      requestSignal.addEventListener('abort', () => {
-        writeStream.close();
-        nodeStream.destroy();
-        try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch (e) {}
-        reject(new Error('Download aborted by user'));
-      });
-    }
-  });
-}
-
 export async function GET({ request }: { request: Request }) {
   const urlParams = new URL(request.url).searchParams;
-  const videoUrl = urlParams.get('url');
-  const format = urlParams.get('format') || 'mp3';
-  const quality = urlParams.get('quality');
+  const key = urlParams.get('key');
 
-  if (!videoUrl) {
-    return new Response('Missing URL parameter', { status: 400 });
+  if (!key) {
+    // If someone calls the old API endpoint without the key (e.g. url, format, quality)
+    const videoUrl = urlParams.get('url');
+    if (videoUrl) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Synchronous downloading is no longer supported to protect server resources. Please use the background conversion queue (/api/convert) first.' 
+        }), 
+        { 
+          status: 400, 
+          headers: { 'Content-Type': 'application/json' } 
+        }
+      );
+    }
+    
+    return new Response('Missing key parameter', { status: 400 });
   }
 
-  const videoId = getYouTubeID(videoUrl);
-  if (!videoId) {
-    return new Response('Invalid YouTube URL', { status: 400 });
+  // 1. Validate key structure to prevent directory traversal
+  // Key format: format/videoId_quality.ext (e.g., mp3/dQw4w9WgXcQ_192.mp3)
+  const keyRegex = /^(mp3|mp4)\/[a-zA-Z0-9_-]{11}_[a-zA-Z0-9_]+\.(mp3|mp4)$/;
+  if (!keyRegex.test(key)) {
+    return new Response('Invalid download key', { status: 400 });
   }
 
   try {
-    let webStream: any;
-    let contentType = '';
-    let extension = '';
-    let workingInfo: any;
+    const targetFilePath = path.join(CACHE_DIR, key);
 
-    const tempDir = os.tmpdir();
+    // Double check path resolution safety
+    const relativePath = path.relative(CACHE_DIR, targetFilePath);
+    const isPathSafe = relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath);
 
-    if (format === 'mp3') {
-      // ═══════════════════════════════════════════════════════════════════
-      // MP3: STREAMING PIPELINE with client-type fallback
-      // Downloads audio via YouTube → pipes directly into ffmpeg → client.
-      // If a CDN times out, automatically retries with a different YouTube
-      // client type to get routed to a different googlevideo server.
-      // ═══════════════════════════════════════════════════════════════════
-      const targetBitrate = quality || '192';
-      console.log(`[MP3] Starting download for ${videoId} at ${targetBitrate}kbps`);
-
-      const { stream: ytStream, info: mp3Info } = await downloadStreamWithFallback(
-        videoId,
-        { type: 'audio', quality: 'best' }
-      );
-      workingInfo = mp3Info;
-      const nodeReadable = Readable.fromWeb(ytStream as any);
-
-      // Spawn FFmpeg reading from stdin (pipe:0)
-      const ffmpegProcess = spawn(ffmpegPath || 'ffmpeg', [
-        '-hide_banner',
-        '-loglevel', 'error',
-        '-i', 'pipe:0',
-        '-c:a', 'libmp3lame',
-        '-b:a', `${targetBitrate}k`,
-        '-f', 'mp3',
-        'pipe:1'
-      ]);
-
-      // Pipe YouTube audio directly into ffmpeg's stdin
-      nodeReadable.pipe(ffmpegProcess.stdin);
-
-      // Handle backpressure and errors on stdin
-      nodeReadable.on('error', (err) => {
-        console.error('[MP3] YouTube stream error:', err.message);
-        ffmpegProcess.stdin.destroy();
-      });
-      ffmpegProcess.stdin.on('error', (err) => {
-        if ((err as any).code !== 'EPIPE') {
-          console.error('[MP3] ffmpeg stdin error:', err.message);
-        }
-        nodeReadable.destroy();
-      });
-
-      webStream = Readable.toWeb(ffmpegProcess.stdout);
-      contentType = 'audio/mpeg';
-      extension = 'mp3';
-
-      let ffmpegStderr = '';
-      ffmpegProcess.stderr.on('data', (chunk) => {
-        ffmpegStderr += chunk.toString();
-      });
-      ffmpegProcess.on('error', (err) => {
-        console.error('[MP3] ffmpeg spawn/execution error:', err);
-      });
-      ffmpegProcess.on('close', (code) => {
-        if (code !== 0) {
-          console.error(`[MP3] ffmpeg exited with code ${code}. Stderr: ${ffmpegStderr}`);
-        }
-      });
-
-      if (request.signal) {
-        request.signal.addEventListener('abort', () => {
-          console.log('[MP3] Client aborted, killing pipeline...');
-          nodeReadable.destroy();
-          ffmpegProcess.kill('SIGKILL');
-        });
-      }
-
-    } else {
-      // ═══════════════════════════════════════════════════════════════════
-      // MP4: Get info first (with fallback), then select format + download
-      // ═══════════════════════════════════════════════════════════════════
-      const { info, clientType } = await getInfoWithFallback(videoId);
-      workingInfo = info;
-      const title = info.basic_info.title || 'YouTube Download';
-
-      let videoFormat: any;
-      let needsMuxing = false;
-
-      if (quality === '1080' || quality === '720' || quality === '480' || quality === '360') {
-        // For 720p and 360p, first check if combined format exists
-        if (quality === '720') {
-          videoFormat = info.streaming_data?.formats?.find((f: any) => f.itag === 22);
-        } else if (quality === '360') {
-          videoFormat = info.streaming_data?.formats?.find((f: any) => f.itag === 18);
-        }
-
-        if (videoFormat) {
-          needsMuxing = false;
-        } else {
-          videoFormat = findVideoFormat(info, quality);
-          needsMuxing = true;
-        }
-      }
-
-      if (!videoFormat) {
-        videoFormat = info.streaming_data?.formats?.find((f: any) => f.itag === 22) ||
-                      info.streaming_data?.formats?.find((f: any) => f.itag === 18) ||
-                      findVideoFormat(info, '1080') ||
-                      findVideoFormat(info, '720') ||
-                      findVideoFormat(info, '480') ||
-                      findVideoFormat(info, '360') ||
-                      safeChooseFormat(info, { type: 'video', quality: 'best', format: 'mp4' }) ||
-                      safeChooseFormat(info, { type: 'video', quality: 'best' });
-        needsMuxing = !info.streaming_data?.formats?.find((f: any) => f.itag === videoFormat?.itag);
-      }
-
-      if (!videoFormat) {
-        throw new Error(`Requested video quality ${quality}p is not available.`);
-      }
-
-      const targetQuality = videoFormat.quality_label || videoFormat.quality || `${quality}p`;
-
-      if (needsMuxing) {
-        const videoTempPath = path.join(tempDir, `yt_video_${videoId}_${Date.now()}.mp4`);
-        const audioTempPath = path.join(tempDir, `yt_audio_${videoId}_${Date.now()}.m4a`);
-
-        console.log(`[MP4-MUX] Downloading video+audio in parallel for ${videoId} via ${clientType} (quality: ${targetQuality})`);
-
-        // Download both streams with individual client-type fallback
-        const [videoResult, audioResult] = await Promise.all([
-          downloadStreamWithFallback(videoId, { type: 'video', quality: targetQuality }),
-          downloadStreamWithFallback(videoId, { type: 'audio', quality: 'best' })
-        ]);
-
-        await Promise.all([
-          saveStreamToFile(videoResult.stream, videoTempPath, request.signal),
-          saveStreamToFile(audioResult.stream, audioTempPath, request.signal)
-        ]);
-
-        console.log(`[MP4-MUX] Muxing downloaded streams to MP4`);
-        const ffmpegProcess = spawn(ffmpegPath || 'ffmpeg', [
-          '-hide_banner',
-          '-loglevel', 'error',
-          '-i', videoTempPath,
-          '-i', audioTempPath,
-          '-c:v', 'copy',
-          '-c:a', 'copy',
-          '-f', 'mp4',
-          '-movflags', 'frag_keyframe+empty_moov',
-          'pipe:1'
-        ]);
-
-        webStream = Readable.toWeb(ffmpegProcess.stdout);
-        contentType = 'video/mp4';
-        extension = 'mp4';
-
-        const cleanup = () => {
-          try { if (fs.existsSync(videoTempPath)) fs.unlinkSync(videoTempPath); } catch (e) {}
-          try { if (fs.existsSync(audioTempPath)) fs.unlinkSync(audioTempPath); } catch (e) {}
-        };
-
-        let ffmpegStderr = '';
-        ffmpegProcess.stderr.on('data', (chunk) => {
-          ffmpegStderr += chunk.toString();
-        });
-        ffmpegProcess.on('error', (err) => {
-          console.error('[MP4-MUX] ffmpeg error:', err);
-          cleanup();
-        });
-        ffmpegProcess.on('close', (code) => {
-          if (code !== 0) {
-            console.error(`[MP4-MUX] ffmpeg exited with code ${code}. Stderr: ${ffmpegStderr}`);
-          }
-          cleanup();
-        });
-
-        if (request.signal) {
-          request.signal.addEventListener('abort', () => {
-            console.log('[MP4-MUX] Client aborted, cleaning up...');
-            ffmpegProcess.kill('SIGKILL');
-            cleanup();
-          });
-        }
-      } else {
-        // Combined format — try download with fallback
-        console.log(`[MP4-DIRECT] Streaming combined format for ${videoId} (quality: ${targetQuality})`);
-        const { stream: videoStream } = await downloadStreamWithFallback(
-          videoId,
-          { type: 'video+audio', quality: targetQuality }
-        );
-        webStream = videoStream;
-        contentType = 'video/mp4';
-        extension = 'mp4';
-      }
+    if (!isPathSafe || !fs.existsSync(targetFilePath)) {
+      return new Response('File not found or expired from cache', { status: 404 });
     }
 
-    // Get title for the Content-Disposition header
-    const title = workingInfo?.basic_info?.title || 'YouTube Download';
+    // 2. Extract videoId and format from the key
+    const parts = key.split('/');
+    const format = parts[0]; // mp3 or mp4
+    const filename = parts[1]; // videoId_quality.ext
+    
+    const lastUnderscore = filename.lastIndexOf('_');
+    const videoId = filename.substring(0, lastUnderscore);
+
+    // 3. Fetch title from Redis metadata cache if available
+    let title = 'YouTube Download';
+    try {
+      const cacheKeyMeta = `ytomp3:meta:${videoId}`;
+      const cachedMeta = await redisConnection.get(cacheKeyMeta);
+      if (cachedMeta) {
+        const metadata = JSON.parse(cachedMeta);
+        title = metadata.title || title;
+      }
+    } catch (e) {
+      console.warn('[Download] Failed to fetch video title from Redis:', e);
+    }
+
+    // 4. Set headers and stream the file
+    const stat = fs.statSync(targetFilePath);
+    const nodeStream = fs.createReadStream(targetFilePath);
+    const webStream = Readable.toWeb(nodeStream as any);
+
     const safeTitle = sanitizeFilename(title);
     const asciiTitle = safeTitle.replace(/[^\x00-\x7F]/g, '').replace(/\s+/g, ' ').trim() || 'download';
+    const contentType = format === 'mp3' ? 'audio/mpeg' : 'video/mp4';
 
     return new Response(webStream as any, {
       status: 200,
       headers: {
-        'Content-Disposition': `attachment; filename="${asciiTitle}.${extension}"; filename*=UTF-8''${encodeURIComponent(safeTitle)}.${extension}`,
+        'Content-Disposition': `attachment; filename="${asciiTitle}.${format}"; filename*=UTF-8''${encodeURIComponent(safeTitle)}.${format}`,
         'Content-Type': contentType,
-        'Cache-Control': 'no-store',
+        'Content-Length': stat.size.toString(),
+        'Cache-Control': 'public, max-age=31536000, immutable',
         'X-App-Version': '2.2.0'
       }
     });
+
   } catch (error: any) {
-    console.error('Download error:', error);
-    return new Response(`Failed to initiate download stream: ${error?.message || error}`, { status: 500 });
+    console.error('[API-Download] Error:', error);
+    return new Response('An error occurred while preparing your download.', { status: 500 });
   }
 }

@@ -1,6 +1,9 @@
 import { getInfoWithFallback, findVideoFormat } from '../../lib/innertube-cache';
+import { redisConnection } from '../../lib/redis';
 
 export const prerender = false;
+
+const MAX_DURATION = 60 * 60; // 60 minutes
 
 function getYouTubeID(url: string) {
   const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
@@ -40,6 +43,36 @@ export async function GET({ request }: { request: Request }) {
   }
 
   try {
+    // 1. Check Redis cache first
+    const cacheKey = `ytomp3:meta:${videoId}`;
+    const cachedMeta = await redisConnection.get(cacheKey);
+
+    if (cachedMeta) {
+      const metadata = JSON.parse(cachedMeta);
+      
+      // Enforce duration limit on cache hits
+      if (metadata.durationSeconds > MAX_DURATION) {
+        return new Response(JSON.stringify({
+          error: `Video duration exceeds the maximum limit of 60 minutes (${formatDuration(metadata.durationSeconds)})`
+        }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        ...metadata
+      }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'public, max-age=3600'
+        }
+      });
+    }
+
+    // 2. Cache miss: fetch from YouTube
     const { info } = await getInfoWithFallback(videoId);
 
     const title = info.basic_info.title || 'YouTube Video';
@@ -47,6 +80,16 @@ export async function GET({ request }: { request: Request }) {
     const durationSeconds = info.basic_info.duration || 0;
     const durationFormatted = formatDuration(durationSeconds);
     
+    // Enforce duration limit on cache misses
+    if (durationSeconds > MAX_DURATION) {
+      return new Response(JSON.stringify({
+        error: `Video duration exceeds the maximum limit of 60 minutes (${durationFormatted})`
+      }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
     // Extract high res thumbnail if possible
     const thumbnails = info.basic_info.thumbnail || [];
     const thumbnail = thumbnails.length > 0 ? thumbnails[thumbnails.length - 1].url : `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
@@ -94,9 +137,7 @@ export async function GET({ request }: { request: Request }) {
       }
     }
 
-    // Return metadata
-    return new Response(JSON.stringify({
-      success: true,
+    const responseData = {
       videoId,
       title,
       author,
@@ -104,6 +145,15 @@ export async function GET({ request }: { request: Request }) {
       durationFormatted,
       thumbnail,
       sizes
+    };
+
+    // Store in Redis with 24h TTL
+    await redisConnection.setex(cacheKey, 24 * 60 * 60, JSON.stringify(responseData));
+
+    // Return metadata
+    return new Response(JSON.stringify({
+      success: true,
+      ...responseData
     }), {
       status: 200,
       headers: {

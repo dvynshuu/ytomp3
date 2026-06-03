@@ -292,79 +292,40 @@
     if (progressBar) progressBar.style.width = '0%';
     if (progressPercent) progressPercent.innerText = '0%';
     if (progressEta) progressEta.innerText = 'Connecting...';
-    if (statusTitle) statusTitle.innerText = "Extracting video metadata";
-    if (statusSub) statusSub.innerText = "Connecting to YouTube stream server...";
+    if (statusTitle) statusTitle.innerText = "Initializing conversion job";
+    if (statusSub) statusSub.innerText = "Connecting to conversion server...";
 
-    let progress = 0;
-    const progressInterval = setInterval(() => {
-      if (progress < 90) {
-        progress += Math.floor(Math.random() * 8) + 2;
-        if (progressBar) progressBar.style.width = `${progress}%`;
-        if (progressPercent) progressPercent.innerText = `${progress}%`;
-      }
-    }, 200);
+    const selectedQuality = qualitySelect?.value || '192';
 
     try {
-      const response = await fetch(`/api/info?url=${encodeURIComponent(url)}`);
-      clearInterval(progressInterval);
+      // Initiate conversion job
+      const response = await fetch(`/api/convert?url=${encodeURIComponent(url)}&format=${currentFormat}&quality=${selectedQuality}`);
 
       if (!response.ok) {
         const errData = await response.json();
-        throw new Error(errData.error || 'Failed to fetch video details');
+        throw new Error(errData.error || 'Failed to initialize conversion');
       }
 
-      const data = await response.json();
-      
-      // Update progress to 100%
-      if (progressBar) progressBar.style.width = '100%';
-      if (progressPercent) progressPercent.innerText = '100%';
-      if (progressEta) progressEta.innerText = 'Done!';
+      const convertData = await response.json();
+      const videoInfo = convertData.info;
 
-      // Fill Done state details
-      if (doneTitle) doneTitle.innerText = data.title;
-      if (doneDuration) doneDuration.innerText = `Duration: ${data.durationFormatted}`;
-      
-      const selectedQuality = qualitySelect?.value || '192';
-      const isAudio = currentFormat === 'mp3';
-      let sizeMB = 0;
-      let qualityLabel = '';
-      
-      if (isAudio) {
-        sizeMB = (data.durationSeconds * Number(selectedQuality)) / 8000;
-        qualityLabel = `${selectedQuality}kbps`;
-      } else {
-        if (data.sizes && data.sizes[selectedQuality]) {
-          sizeMB = data.sizes[selectedQuality];
-        } else {
-          const mins = data.durationSeconds / 60;
-          const sizePerMin: Record<string, number> = { '1080': 15.0, '720': 8.0, '480': 4.5, '360': 2.5 };
-          sizeMB = mins * (sizePerMin[selectedQuality] || 8.0);
-        }
-        qualityLabel = `${selectedQuality}p`;
+      // Update UI title with video title
+      if (statusTitle && videoInfo) {
+        statusTitle.innerText = videoInfo.title;
       }
 
-      if (doneInfo) {
-        doneInfo.innerText = `Format: ${currentFormat.toUpperCase()} • ${qualityLabel} • ~${sizeMB.toFixed(1)} MB`;
-      }
-
-      if (doneThumb) {
-        doneThumb.src = data.thumbnail;
-        doneThumb.classList.remove('hidden');
-        doneThumbPlaceholder?.classList.add('hidden');
-      }
-
-      // Configure direct download URL
-      if (btnDownload) {
-        btnDownload.href = `/api/download?url=${encodeURIComponent(url)}&format=${currentFormat}&quality=${selectedQuality}`;
-      }
-
-      // Show Done state after a slight delay for visual transition
-      setTimeout(() => {
+      if (convertData.status === 'completed') {
+        // Instant cache hit!
+        updateDoneState(videoInfo, convertData.downloadUrl, selectedQuality);
         showState('done');
-      }, 300);
+        return;
+      }
+
+      // Processing - start polling
+      const jobId = convertData.jobId;
+      pollJobStatus(jobId, videoInfo, selectedQuality);
 
     } catch (err: any) {
-      clearInterval(progressInterval);
       console.error(err);
       if (errorMessage) {
         errorMessage.innerText = err.message || 'An error occurred during video extraction.';
@@ -372,6 +333,105 @@
       showState('error');
     }
   });
+
+  function updateDoneState(videoInfo: any, downloadUrl: string, selectedQuality: string) {
+    if (doneTitle) doneTitle.innerText = videoInfo.title;
+    if (doneDuration) doneDuration.innerText = `Duration: ${formatSeconds(videoInfo.durationSeconds)}`;
+    
+    const isAudio = currentFormat === 'mp3';
+    let sizeMB = 0;
+    let qualityLabel = '';
+    
+    if (isAudio) {
+      sizeMB = (videoInfo.durationSeconds * Number(selectedQuality)) / 8000;
+      qualityLabel = `${selectedQuality}kbps`;
+    } else {
+      if (videoInfo.sizes && videoInfo.sizes[selectedQuality]) {
+        sizeMB = videoInfo.sizes[selectedQuality];
+      } else {
+        const mins = videoInfo.durationSeconds / 60;
+        const sizePerMin: Record<string, number> = { '1080': 15.0, '720': 8.0, '480': 4.5, '360': 2.5 };
+        sizeMB = mins * (sizePerMin[selectedQuality] || 8.0);
+      }
+      qualityLabel = `${selectedQuality}p`;
+    }
+
+    if (doneInfo) {
+      doneInfo.innerText = `Format: ${currentFormat.toUpperCase()} • ${qualityLabel} • ~${sizeMB.toFixed(1)} MB`;
+    }
+
+    if (doneThumb) {
+      doneThumb.src = videoInfo.thumbnail;
+      doneThumb.classList.remove('hidden');
+      doneThumbPlaceholder?.classList.add('hidden');
+    }
+
+    if (btnDownload) {
+      btnDownload.href = downloadUrl;
+    }
+  }
+
+  function formatSeconds(seconds: number) {
+    if (!seconds || isNaN(seconds) || seconds < 0) return '--:--';
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    
+    if (hrs > 0) {
+      return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  function pollJobStatus(jobId: string, videoInfo: any, selectedQuality: string) {
+    const pollInterval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/job-status?jobId=${jobId}`);
+        if (!res.ok) throw new Error('Status check failed');
+
+        const statusData = await res.json();
+
+        if (statusData.status === 'completed') {
+          clearInterval(pollInterval);
+          if (progressBar) progressBar.style.width = '100%';
+          if (progressPercent) progressPercent.innerText = '100%';
+          if (progressEta) progressEta.innerText = 'Completed!';
+          
+          updateDoneState(videoInfo, statusData.downloadUrl, selectedQuality);
+          setTimeout(() => {
+            showState('done');
+          }, 300);
+        } else if (statusData.status === 'failed') {
+          clearInterval(pollInterval);
+          if (errorMessage) {
+            errorMessage.innerText = statusData.error || 'Conversion failed.';
+          }
+          showState('error');
+        } else {
+          // Status is processing (active or queued)
+          const progress = statusData.progress || 0;
+          if (progressBar) progressBar.style.width = `${progress}%`;
+          if (progressPercent) progressPercent.innerText = `${progress}%`;
+          
+          if (statusSub) {
+            if (progress < 10) {
+              statusSub.innerText = "Queued in worker...";
+              if (progressEta) progressEta.innerText = "Waiting...";
+            } else if (progress < 80) {
+              statusSub.innerText = "Downloading media stream(s)...";
+              if (progressEta) progressEta.innerText = "Downloading...";
+            } else {
+              statusSub.innerText = currentFormat === 'mp3' ? "Transcoding to MP3..." : "Muxing audio & video tracks...";
+              if (progressEta) progressEta.innerText = "Processing...";
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error polling status:', err);
+        // Keep polling on network glitches
+      }
+    }, 1500);
+  }
 
   // Reset to idle
   btnConvertAnother?.addEventListener('click', () => {

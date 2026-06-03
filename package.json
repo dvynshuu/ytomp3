@@ -16,9 +16,11 @@
     "@astrojs/node": "^10.1.2",
     "@tailwindcss/vite": "^4.3.0",
     "astro": "^6.4.2",
+    "bullmq": "^5.78.0",
+    "ffmpeg-static": "^5.2.0",
+    "ioredis": "^5.11.0",
     "tailwindcss": "^4.3.0",
     "youtube-po-token-generator": "^0.6.0",
-    "youtubei.js": "^17.0.1",
-    "ffmpeg-static": "^5.2.0"
+    "youtubei.js": "^17.0.1"
   }
 }
