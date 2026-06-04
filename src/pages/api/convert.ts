@@ -195,7 +195,7 @@ export async function GET({ request }: { request: Request }) {
     let details = error?.message || String(error);
     if (details.includes('timed out') || details.includes('fetch failed')) {
       details += '. Tip: Deployed servers (like Render) are often blocked by YouTube. Please verify that YOUTUBE_COOKIE and PO_TOKEN are set correctly in your environment variables.';
-    } else if (details.includes('Redis connection') || details.includes('redis')) {
+    } else if (details.includes('Redis connection') || details.includes('redis') || details.includes('max retries') || details.includes('maxRetriesPerRequest')) {
       details += '. Tip: Please check your Redis configuration (REDIS_URL). Ensure your Redis service is running and accessible.';
     }
     return new Response(JSON.stringify({
