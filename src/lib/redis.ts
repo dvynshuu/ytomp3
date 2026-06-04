@@ -7,6 +7,8 @@ if (!globalSymbols.redisConnection) {
   console.log(`[Redis] Connecting to ${redisUrl}...`);
   globalSymbols.redisConnection = new Redis(redisUrl, {
     maxRetriesPerRequest: null,
+    connectTimeout: 5000,
+    enableOfflineQueue: false,
   });
   
   globalSymbols.redisConnection.on('error', (err: any) => {

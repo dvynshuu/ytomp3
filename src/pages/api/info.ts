@@ -163,9 +163,15 @@ export async function GET({ request }: { request: Request }) {
     });
   } catch (error: any) {
     console.error('Error fetching YouTube info:', error);
+    let details = error?.message || String(error);
+    if (details.includes('timed out') || details.includes('fetch failed')) {
+      details += '. Tip: Deployed servers (like Render) are often blocked by YouTube. Please verify that YOUTUBE_COOKIE and PO_TOKEN are set correctly in your environment variables.';
+    } else if (details.includes('Redis connection') || details.includes('redis')) {
+      details += '. Tip: Please check your Redis configuration (REDIS_URL). Ensure your Redis service is running and accessible.';
+    }
     return new Response(JSON.stringify({ 
       error: 'Failed to retrieve video metadata. YouTube might be blocking the request or the video could be private/restricted.',
-      details: error?.message || String(error)
+      details: details
     }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' }

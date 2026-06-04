@@ -48,6 +48,31 @@ export function getAuthConfig() {
 }
 
 /**
+ * Custom fetch wrapper that times out the connection/header phase
+ * to prevent hanging requests on network blocks/dropped packets.
+ */
+function fetchWithTimeout(timeoutMs: number = 15000): typeof fetch {
+  return async (input: RequestInfo | URL, init?: RequestInit) => {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(input, {
+        ...init,
+        signal: controller.signal
+      });
+      clearTimeout(id);
+      return response;
+    } catch (err: any) {
+      clearTimeout(id);
+      if (err.name === 'AbortError') {
+        throw new Error(`Request timed out after ${timeoutMs}ms`);
+      }
+      throw err;
+    }
+  };
+}
+
+/**
  * Get or create an Innertube instance for a specific client type, with optional auth.
  * Cached for 30 minutes.
  */
@@ -67,7 +92,8 @@ export async function getInnertube(clientType?: string, useAuth: boolean = true)
     client_type: resolvedType as any,
     cookie: auth.cookie,
     po_token: auth.poToken,
-    visitor_data: auth.visitorData
+    visitor_data: auth.visitorData,
+    fetch: fetchWithTimeout(15000)
   });
 
   instanceCache.set(cacheKey, { instance, createdAt: now });

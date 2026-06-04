@@ -303,7 +303,8 @@
 
       if (!response.ok) {
         const errData = await response.json();
-        throw new Error(errData.error || 'Failed to initialize conversion');
+        const msg = errData.details ? `${errData.error} ${errData.details}` : (errData.error || 'Failed to initialize conversion');
+        throw new Error(msg);
       }
 
       const convertData = await response.json();
