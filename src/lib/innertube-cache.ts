@@ -1,4 +1,5 @@
 import { Innertube, Platform } from 'youtubei.js';
+import { getOrGenerateTokens, invalidateTokens } from './po-token';
 
 // Setup signature decipher shim for Innertube (once)
 if (typeof Platform !== 'undefined' && Platform.shim) {
@@ -9,10 +10,7 @@ if (typeof Platform !== 'undefined' && Platform.shim) {
 }
 
 // ─── Multi-client Innertube cache ──────────────────────────────────────
-// Different YouTube client types (ANDROID, WEB, etc.) return stream URLs
-// pointing to different CDN servers. If one CDN node times out, we can
-// fall back to a different client type to get working URLs.
-//
+// Focused on 3 client types that actually work with PO tokens.
 // Each client type is cached independently with a 30-minute TTL.
 
 interface CachedInstance {
@@ -23,36 +21,26 @@ interface CachedInstance {
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const instanceCache = new Map<string, CachedInstance>();
 
-// Client types to try, in priority order.
-// IOS and MWEB are highly effective at bypassing "Sign in to confirm you're not a bot" checks on cloud hosts.
-// ANDROID is most reliable for downloads, WEB has broadest format support,
-// ANDROID_VR/TV_EMBEDDED are fallbacks for age-restricted content.
-export const CLIENT_TYPES = ['IOS', 'MWEB', 'ANDROID', 'WEB', 'ANDROID_VR', 'TV_EMBEDDED'] as const;
+// Reduced client types — only those that reliably work with PO tokens.
+// WEB has the broadest format support, MWEB/ANDROID are good fallbacks.
+export const CLIENT_TYPES = ['WEB', 'MWEB', 'ANDROID'] as const;
 
-export function getAuthConfig() {
+/**
+ * Get cookie from environment variable (cleaned).
+ */
+function getEnvCookie(): string | undefined {
   let cookie = process.env.YOUTUBE_COOKIE || undefined;
   if (cookie) {
     cookie = cookie.replace(/^(cookie|Cookie):\s*/i, '').trim().replace(/^["']|["']$/g, '').trim();
   }
-
-  let poToken = process.env.PO_TOKEN || undefined;
-  if (poToken) {
-    poToken = poToken.replace(/^(po_token|poToken):\s*/i, '').trim().replace(/^["']|["']$/g, '').trim();
-  }
-
-  let visitorData = process.env.VISITOR_DATA || undefined;
-  if (visitorData) {
-    visitorData = visitorData.replace(/^(visitor_data|visitorData):\s*/i, '').trim().replace(/^["']|["']$/g, '').trim();
-  }
-
-  return { cookie, poToken, visitorData };
+  return cookie;
 }
 
 /**
  * Custom fetch wrapper that times out the connection/header phase
  * to prevent hanging requests on network blocks/dropped packets.
  */
-function fetchWithTimeout(timeoutMs: number = 15000): typeof fetch {
+function fetchWithTimeout(timeoutMs: number = 30000): typeof fetch {
   return async (input: RequestInfo | URL, init?: RequestInit) => {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeoutMs);
@@ -74,27 +62,30 @@ function fetchWithTimeout(timeoutMs: number = 15000): typeof fetch {
 }
 
 /**
- * Get or create an Innertube instance for a specific client type, with optional auth.
+ * Get or create an Innertube instance for a specific client type.
+ * Automatically uses PO tokens from the po-token module.
  * Cached for 30 minutes.
  */
-export async function getInnertube(clientType?: string, useAuth: boolean = true): Promise<Innertube> {
-  const auth = useAuth ? getAuthConfig() : { cookie: undefined, poToken: undefined, visitorData: undefined };
-  const resolvedType = clientType || (auth.cookie ? 'MWEB' : CLIENT_TYPES[0]);
+export async function getInnertube(clientType?: string): Promise<Innertube> {
+  const tokens = await getOrGenerateTokens();
+  const cookie = getEnvCookie();
+  const resolvedType = clientType || 'WEB';
   const now = Date.now();
-  const cacheKey = `${resolvedType}_${useAuth ? 'auth' : 'noauth'}`;
+  const cacheKey = resolvedType;
 
   const cached = instanceCache.get(cacheKey);
   if (cached && (now - cached.createdAt) < CACHE_TTL_MS) {
     return cached.instance;
   }
 
-  console.log(`[Innertube] Creating new ${resolvedType} client instance (auth: ${useAuth})...`);
+  console.log(`[Innertube] Creating ${resolvedType} client (poToken: ${tokens.poToken ? 'yes' : 'no'}, visitorData: ${tokens.visitorData ? 'yes' : 'no'}, cookie: ${cookie ? 'yes' : 'no'})`);
+
   const instance = await Innertube.create({
     client_type: resolvedType as any,
-    cookie: auth.cookie,
-    po_token: auth.poToken,
-    visitor_data: auth.visitorData,
-    fetch: fetchWithTimeout(15000)
+    po_token: tokens.poToken,
+    visitor_data: tokens.visitorData,
+    cookie,
+    fetch: fetchWithTimeout(30000)
   });
 
   instanceCache.set(cacheKey, { instance, createdAt: now });
@@ -102,72 +93,78 @@ export async function getInnertube(clientType?: string, useAuth: boolean = true)
 }
 
 /**
- * Invalidate cached instance for a specific client type and auth status.
+ * Invalidate cached instance for a specific client type.
  */
-export function invalidateCache(clientType?: string, useAuth: boolean = true) {
+export function invalidateCache(clientType?: string) {
   if (clientType) {
-    const cacheKey = `${clientType}_${useAuth ? 'auth' : 'noauth'}`;
-    instanceCache.delete(cacheKey);
+    instanceCache.delete(clientType);
   } else {
     instanceCache.clear();
   }
 }
 
+function isBotDetectionError(err: any): boolean {
+  const msg = String(err?.message || err);
+  return msg.includes('Sign in to confirm') || msg.includes('not a bot');
+}
+
 function isTimeoutError(err: any): boolean {
   const msg = String(err?.message || err);
-  return msg.includes('fetch failed') || msg.includes('timeout') ||
+  return msg.includes('fetch failed') || msg.includes('timeout') || msg.includes('timed out') ||
          err?.cause?.code === 'UND_ERR_CONNECT_TIMEOUT' ||
          err?.code === 'UND_ERR_CONNECT_TIMEOUT';
 }
 
-interface ClientConfig {
-  type: string;
-  useAuth: boolean;
-}
-
-function getFallbackConfigs(): ClientConfig[] {
-  const auth = getAuthConfig();
-  const hasAuth = !!(auth.cookie || auth.poToken);
-  const configs: ClientConfig[] = [];
-
-  // If auth is provided, prioritize trying configurations with auth
-  if (hasAuth) {
-    for (const type of CLIENT_TYPES) {
-      configs.push({ type, useAuth: true });
-    }
-  }
-  // Then try configurations without auth
-  for (const type of CLIENT_TYPES) {
-    configs.push({ type, useAuth: false });
-  }
-
-  return configs;
-}
-
 /**
- * Fetch video info with client-type fallback and auth fallback.
+ * Fetch video info with client-type fallback and automatic token refresh.
+ * 
+ * Strategy:
+ *  1. Try each client type with current tokens
+ *  2. On bot detection: refresh tokens and retry once
+ *  3. On timeout: move to next client type
  */
-export async function getInfoWithFallback(videoId: string): Promise<{ info: any; clientType: string; useAuth: boolean }> {
+export async function getInfoWithFallback(videoId: string): Promise<{ info: any; clientType: string }> {
   const errors: string[] = [];
-  const configs = getFallbackConfigs();
+  let tokenRefreshed = false;
 
-  for (const config of configs) {
+  for (const clientType of CLIENT_TYPES) {
     try {
-      const yt = await getInnertube(config.type, config.useAuth);
+      const yt = await getInnertube(clientType);
       const info = await yt.getBasicInfo(videoId);
 
       if (info.playability_status && info.playability_status.status !== 'OK') {
         const reason = info.playability_status.reason || 'Video unplayable';
-        console.warn(`[Fallback] ${config.type} (auth: ${config.useAuth}) returned unplayable: ${reason}`);
-        errors.push(`${config.type}(auth:${config.useAuth}): ${reason}`);
+        console.warn(`[Fallback] ${clientType} returned unplayable: ${reason}`);
+        errors.push(`${clientType}: ${reason}`);
         continue;
       }
 
-      return { info, clientType: config.type, useAuth: config.useAuth };
+      return { info, clientType };
     } catch (err: any) {
-      console.warn(`[Fallback] ${config.type} (auth: ${config.useAuth}) getBasicInfo failed: ${err?.message}`);
-      errors.push(`${config.type}(auth:${config.useAuth}): ${err?.message}`);
-      invalidateCache(config.type, config.useAuth);
+      console.warn(`[Fallback] ${clientType} getBasicInfo failed: ${err?.message}`);
+      errors.push(`${clientType}: ${err?.message}`);
+      invalidateCache(clientType);
+
+      // On bot detection, refresh tokens and retry with same client
+      if (isBotDetectionError(err) && !tokenRefreshed) {
+        console.log('[Fallback] Bot detection triggered — refreshing PO tokens...');
+        tokenRefreshed = true;
+        invalidateTokens();
+        instanceCache.clear();
+
+        try {
+          const yt = await getInnertube(clientType);
+          const info = await yt.getBasicInfo(videoId);
+
+          if (info.playability_status && info.playability_status.status === 'OK') {
+            return { info, clientType };
+          }
+        } catch (retryErr: any) {
+          console.warn(`[Fallback] Retry after token refresh failed: ${retryErr?.message}`);
+          errors.push(`${clientType}(retry): ${retryErr?.message}`);
+        }
+      }
+
       continue;
     }
   }
@@ -176,37 +173,55 @@ export async function getInfoWithFallback(videoId: string): Promise<{ info: any;
 }
 
 /**
- * Attempt to download a stream, falling back through client types and auth options.
+ * Attempt to download a stream, falling back through client types.
  */
 export async function downloadStreamWithFallback(
   videoId: string,
   downloadOptions: any
-): Promise<{ stream: any; info: any; clientType: string; useAuth: boolean }> {
+): Promise<{ stream: any; info: any; clientType: string }> {
   const errors: string[] = [];
-  const configs = getFallbackConfigs();
+  let tokenRefreshed = false;
 
-  for (const config of configs) {
+  for (const clientType of CLIENT_TYPES) {
     try {
-      const yt = await getInnertube(config.type, config.useAuth);
+      const yt = await getInnertube(clientType);
       const info = await yt.getBasicInfo(videoId);
 
       if (info.playability_status && info.playability_status.status !== 'OK') {
-        errors.push(`${config.type}(auth:${config.useAuth}): unplayable`);
+        errors.push(`${clientType}: unplayable`);
         continue;
       }
 
-      console.log(`[Download] Trying ${config.type} client (auth: ${config.useAuth}) for stream...`);
+      console.log(`[Download] Trying ${clientType} client for stream...`);
       const stream = await info.download(downloadOptions);
-      return { stream, info, clientType: config.type, useAuth: config.useAuth };
+      return { stream, info, clientType };
     } catch (err: any) {
       if (isTimeoutError(err)) {
-        console.warn(`[Download] ${config.type} (auth: ${config.useAuth}) CDN timed out, trying fallback...`);
-        invalidateCache(config.type, config.useAuth);
-        errors.push(`${config.type}(auth:${config.useAuth}): CDN timeout`);
+        console.warn(`[Download] ${clientType} CDN timed out, trying fallback...`);
+        invalidateCache(clientType);
+        errors.push(`${clientType}: CDN timeout`);
         continue;
       }
-      console.warn(`[Download] ${config.type} (auth: ${config.useAuth}) download error: ${err?.message}`);
-      errors.push(`${config.type}(auth:${config.useAuth}): ${err?.message}`);
+
+      // On bot detection, refresh tokens and retry
+      if (isBotDetectionError(err) && !tokenRefreshed) {
+        console.log('[Download] Bot detection triggered — refreshing PO tokens...');
+        tokenRefreshed = true;
+        invalidateTokens();
+        instanceCache.clear();
+
+        try {
+          const yt = await getInnertube(clientType);
+          const info = await yt.getBasicInfo(videoId);
+          const stream = await info.download(downloadOptions);
+          return { stream, info, clientType };
+        } catch (retryErr: any) {
+          errors.push(`${clientType}(retry): ${retryErr?.message}`);
+        }
+      }
+
+      console.warn(`[Download] ${clientType} download error: ${err?.message}`);
+      errors.push(`${clientType}: ${err?.message}`);
       continue;
     }
   }
@@ -241,5 +256,3 @@ export function findVideoFormat(info: any, qualityPrefix: string) {
   // Fallback to any matching format sorted by bitrate ascending
   return candidates.sort((a: any, b: any) => (a.bitrate || 0) - (b.bitrate || 0))[0];
 }
-
-
