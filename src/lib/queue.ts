@@ -1,5 +1,5 @@
 import { Queue, Worker } from 'bullmq';
-import { redisConnection } from './redis';
+import { queueRedisConnection } from './redis';
 import { downloadStreamWithFallback, getInfoWithFallback, findVideoFormat } from './innertube-cache';
 import ffmpegPath from 'ffmpeg-static';
 import { spawn } from 'child_process';
@@ -24,7 +24,7 @@ try {
 
 if (!globalSymbols.conversionQueue) {
   globalSymbols.conversionQueue = new Queue('conversion-queue', {
-    connection: redisConnection,
+    connection: queueRedisConnection,
     defaultJobOptions: {
       removeOnComplete: true,
       removeOnFail: false, // Keep failed jobs for logs/status
@@ -319,7 +319,7 @@ if (!globalSymbols.conversionWorker) {
       await runConversionJob(job, videoId, format, quality);
     },
     {
-      connection: redisConnection,
+      connection: queueRedisConnection,
       concurrency: 5, // Restricts concurrent FFmpeg muxes/transcodes to 5
     }
   );
