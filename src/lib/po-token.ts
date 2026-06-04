@@ -25,6 +25,32 @@ const REQUEST_KEY = 'O43z0dpjhgX20SCx4KAo'; // YouTube's BotGuard request key
 
 let cachedTokens: CachedTokens | null = null;
 let generationPromise: Promise<CachedTokens> | null = null;
+let activeWindow: any = null;
+
+// Expose JSDOM window properties dynamically on globalThis once.
+// This allows the BotGuard VM script (which is executed via new Function())
+// to access browser APIs (like navigator, location, screen) in Node's global scope.
+try {
+  const dummyDom = new JSDOM();
+  const keys = Object.getOwnPropertyNames(dummyDom.window).filter(
+    k => !k.startsWith('_') && k !== 'window' && k !== 'document'
+  );
+  for (const key of keys) {
+    if (!(key in globalThis)) {
+      try {
+        Object.defineProperty(globalThis, key, {
+          get: () => activeWindow?.[key],
+          set: (val) => { if (activeWindow) activeWindow[key] = val; },
+          configurable: true
+        });
+      } catch (e) {
+        // Ignore read-only or clashes
+      }
+    }
+  }
+} catch (e) {
+  console.error('[PoToken] Failed to initialize JSDOM global wrappers:', e);
+}
 
 /**
  * Get cached tokens or generate fresh ones.
@@ -82,16 +108,19 @@ async function generateFreshTokens(): Promise<CachedTokens> {
   const innertube = await Innertube.create({ retrieve_player: false });
   const visitorData = innertube.session.context.client.visitorData;
 
-  if (!visitorData) {
+  if (!videoIdToUse(visitorData)) {
     throw new Error('Could not obtain visitor data from Innertube session');
   }
 
   // Step 2: Set up JSDOM for BotGuard VM execution
-  const dom = new JSDOM();
-  Object.assign(globalThis, {
-    window: dom.window,
-    document: dom.window.document
+  const dom = new JSDOM('<!DOCTYPE html><html><head></head><body></body></html>', {
+    url: 'https://www.youtube.com/',
+    referrer: 'https://www.youtube.com/',
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
   });
+  activeWindow = dom.window;
+  (globalThis as any).window = dom.window;
+  (globalThis as any).document = dom.window.document;
 
   // Step 3: Fetch and solve BotGuard challenge
   const bgConfig: BgConfig = {
@@ -145,3 +174,8 @@ function cleanEnvVar(value: string | undefined): string | undefined {
     .replace(/^["']|["']$/g, '')
     .trim() || undefined;
 }
+
+function videoIdToUse(val: any): val is string {
+  return typeof val === 'string' && val.length > 0;
+}
+
