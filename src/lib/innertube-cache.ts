@@ -24,9 +24,10 @@ const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const instanceCache = new Map<string, CachedInstance>();
 
 // Client types to try, in priority order.
+// IOS and MWEB are highly effective at bypassing "Sign in to confirm you're not a bot" checks on cloud hosts.
 // ANDROID is most reliable for downloads, WEB has broadest format support,
 // ANDROID_VR/TV_EMBEDDED are fallbacks for age-restricted content.
-export const CLIENT_TYPES = ['ANDROID', 'WEB', 'ANDROID_VR', 'TV_EMBEDDED'] as const;
+export const CLIENT_TYPES = ['IOS', 'MWEB', 'ANDROID', 'WEB', 'ANDROID_VR', 'TV_EMBEDDED'] as const;
 
 export function getAuthConfig() {
   let cookie = process.env.YOUTUBE_COOKIE || undefined;
