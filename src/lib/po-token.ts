@@ -37,9 +37,13 @@ try {
   const keys = Object.getOwnPropertyNames(dummyDom.window).filter(
     k => !k.startsWith('_') && k !== 'window' && k !== 'document'
   );
+  const forceOverride = new Set(['navigator', 'location', 'screen', 'history']);
   for (const key of keys) {
-    if (!(key in globalThis)) {
+    if (!(key in globalThis) || forceOverride.has(key)) {
       try {
+        if (key in globalThis) {
+          delete (globalThis as any)[key];
+        }
         Object.defineProperty(globalThis, key, {
           get: () => (globalThis as any)._activeWindow?.[key],
           set: (val) => { if ((globalThis as any)._activeWindow) (globalThis as any)._activeWindow[key] = val; },
