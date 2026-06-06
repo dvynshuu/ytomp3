@@ -22,8 +22,8 @@ const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const instanceCache = new Map<string, CachedInstance>();
 
 // Reduced client types — only those that reliably work with PO tokens.
-// WEB has the broadest format support, MWEB/ANDROID are good fallbacks.
-export const CLIENT_TYPES = ['WEB', 'MWEB', 'ANDROID'] as const;
+// WEB_REMIX is added and prioritized for audio downloads.
+export const CLIENT_TYPES = ['WEB_REMIX', 'MWEB', 'ANDROID', 'WEB'] as const;
 
 /**
  * Get cookie from environment variable (cleaned).
@@ -36,19 +36,64 @@ function getEnvCookie(): string | undefined {
   return cookie;
 }
 
+function getClientUserAgent(client: string | null): string {
+  if (client === 'MWEB') {
+    return 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
+  }
+  if (client === 'ANDROID') {
+    return 'com.google.android.youtube/21.03.36(Linux; U; Android 16; en_US; SM-S908E Build/TP1A.220624.014) gzip';
+  }
+  if (client === 'IOS') {
+    return 'com.google.ios.youtube/20.11.6 (iPhone10,4; U; CPU iOS 16_7_7 like Mac OS X)';
+  }
+  return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+}
+
 /**
- * Custom fetch wrapper that times out the connection/header phase
- * to prevent hanging requests on network blocks/dropped packets.
+ * Custom fetch wrapper that sets client-specific headers (User-Agent, Origin, Referer)
+ * for googlevideo.com URLs to avoid 403 Forbidden, and implements a connection timeout.
  */
-function fetchWithTimeout(timeoutMs: number = 30000): typeof fetch {
+function fetchWithClientUAAndTimeout(timeoutMs: number = 30000): typeof fetch {
   return async (input: RequestInfo | URL, init?: RequestInit) => {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeoutMs);
+    
+    const urlStr = typeof input === 'string' ? input : (input instanceof URL ? input.toString() : (input as any).url || '');
+    const newInit = init ? { ...init } : {};
+    
+    let headers: Record<string, string> = {};
+    if (newInit.headers) {
+      if (typeof (newInit.headers as any).get === 'function') {
+        const h = newInit.headers as Headers;
+        h.forEach((v, k) => {
+          headers[k] = v;
+        });
+      } else if (Array.isArray(newInit.headers)) {
+        for (const [k, v] of newInit.headers) {
+          headers[k] = v;
+        }
+      } else {
+        headers = { ...(newInit.headers as Record<string, string>) };
+      }
+    }
+    
+    if (urlStr.includes('googlevideo.com')) {
+      try {
+        const url = new URL(urlStr);
+        const client = url.searchParams.get('c');
+        headers['User-Agent'] = getClientUserAgent(client);
+      } catch (e) {
+        headers['User-Agent'] = getClientUserAgent(null);
+      }
+      headers['Origin'] = 'https://www.youtube.com';
+      headers['Referer'] = 'https://www.youtube.com';
+    }
+    
+    newInit.headers = headers;
+    newInit.signal = controller.signal;
+    
     try {
-      const response = await fetch(input, {
-        ...init,
-        signal: controller.signal
-      });
+      const response = await fetch(input, newInit);
       clearTimeout(id);
       return response;
     } catch (err: any) {
@@ -66,26 +111,31 @@ function fetchWithTimeout(timeoutMs: number = 30000): typeof fetch {
  * Automatically uses PO tokens from the po-token module.
  * Cached for 30 minutes.
  */
-export async function getInnertube(clientType?: string): Promise<Innertube> {
-  const tokens = await getOrGenerateTokens();
-  const cookie = getEnvCookie();
-  const resolvedType = clientType || 'WEB';
+export async function getInnertube(clientType?: string, videoId?: string): Promise<Innertube> {
+  const resolvedType = clientType || 'WEB_REMIX';
   const now = Date.now();
-  const cacheKey = resolvedType;
+
+  // Use video-bound tokens if videoId is provided
+  const useVideoBound = !!videoId;
+  const cacheKey = useVideoBound ? `${resolvedType}:${videoId}` : resolvedType;
 
   const cached = instanceCache.get(cacheKey);
   if (cached && (now - cached.createdAt) < CACHE_TTL_MS) {
     return cached.instance;
   }
 
+  const tokens = await getOrGenerateTokens(useVideoBound ? videoId : undefined);
+  const cookie = getEnvCookie();
+
   console.log(`[Innertube] Creating ${resolvedType} client (poToken: ${tokens.poToken ? 'yes' : 'no'}, visitorData: ${tokens.visitorData ? 'yes' : 'no'}, cookie: ${cookie ? 'yes' : 'no'})`);
 
   const instance = await Innertube.create({
     client_type: resolvedType as any,
+    user_agent: getClientUserAgent(resolvedType),
     po_token: tokens.poToken,
     visitor_data: tokens.visitorData,
     cookie,
-    fetch: fetchWithTimeout(30000)
+    fetch: fetchWithClientUAAndTimeout(30000)
   });
 
   instanceCache.set(cacheKey, { instance, createdAt: now });
@@ -95,9 +145,13 @@ export async function getInnertube(clientType?: string): Promise<Innertube> {
 /**
  * Invalidate cached instance for a specific client type.
  */
-export function invalidateCache(clientType?: string) {
+export function invalidateCache(clientType?: string, videoId?: string) {
   if (clientType) {
-    instanceCache.delete(clientType);
+    if (clientType === 'WEB_REMIX' && videoId) {
+      instanceCache.delete(`${clientType}:${videoId}`);
+    } else {
+      instanceCache.delete(clientType);
+    }
   } else {
     instanceCache.clear();
   }
@@ -105,7 +159,14 @@ export function invalidateCache(clientType?: string) {
 
 function isBotDetectionError(err: any): boolean {
   const msg = String(err?.message || err);
-  return msg.includes('Sign in to confirm') || msg.includes('not a bot');
+  return msg.includes('Sign in to confirm') ||
+         msg.includes('not a bot');
+}
+
+function isClientCompatError(err: any): boolean {
+  const msg = String(err?.message || err);
+  return msg.includes('No valid URL to decipher') ||
+         msg.includes('non 2xx status code');
 }
 
 function isTimeoutError(err: any): boolean {
@@ -119,15 +180,16 @@ function isTimeoutError(err: any): boolean {
  * Fetch video info with client-type fallback and automatic token refresh.
  * 
  * Strategy:
- *  1. Try each client type with current tokens
+ *  1. Try each client type with current tokens (WEB_REMIX excluded as it lacks video qualities/sizes)
  *  2. On bot detection: refresh tokens and retry once
  *  3. On timeout: move to next client type
  */
 export async function getInfoWithFallback(videoId: string): Promise<{ info: any; clientType: string }> {
   const errors: string[] = [];
   let tokenRefreshed = false;
+  const metadataClients = ['MWEB', 'ANDROID', 'WEB'] as const;
 
-  for (const clientType of CLIENT_TYPES) {
+  for (const clientType of metadataClients) {
     try {
       const yt = await getInnertube(clientType);
       const info = await yt.getBasicInfo(videoId);
@@ -182,13 +244,25 @@ export async function downloadStreamWithFallback(
   const errors: string[] = [];
   let tokenRefreshed = false;
 
-  for (const clientType of CLIENT_TYPES) {
+  // WEB_REMIX provides URLs for both audio and video formats.
+  // MWEB is the fallback (works for non-music videos where WEB_REMIX returns unplayable).
+  // ANDROID/WEB now use YouTube's SABR protocol and return no decodable URLs.
+  const clientsToTry = (['WEB_REMIX', 'MWEB'] as const);
+
+  for (const clientType of clientsToTry) {
     try {
-      const yt = await getInnertube(clientType);
-      const info = await yt.getBasicInfo(videoId);
+      const yt = await getInnertube(clientType, videoId);
+      
+      console.log(`[Download] Fetching info for ${clientType}...`);
+      let info: any;
+      if (clientType === 'WEB_REMIX') {
+        info = await yt.music.getInfo(videoId);
+      } else {
+        info = await yt.getBasicInfo(videoId);
+      }
 
       if (info.playability_status && info.playability_status.status !== 'OK') {
-        errors.push(`${clientType}: unplayable`);
+        errors.push(`${clientType}: unplayable (${info.playability_status.reason || 'unknown'})`);
         continue;
       }
 
@@ -196,10 +270,17 @@ export async function downloadStreamWithFallback(
       const stream = await info.download(downloadOptions);
       return { stream, info, clientType };
     } catch (err: any) {
+      invalidateCache(clientType, videoId);
+
       if (isTimeoutError(err)) {
         console.warn(`[Download] ${clientType} CDN timed out, trying fallback...`);
-        invalidateCache(clientType);
         errors.push(`${clientType}: CDN timeout`);
+        continue;
+      }
+
+      if (isClientCompatError(err)) {
+        console.warn(`[Download] ${clientType} client compat error, trying fallback...`);
+        errors.push(`${clientType}: ${err?.message}`);
         continue;
       }
 
@@ -211,8 +292,13 @@ export async function downloadStreamWithFallback(
         instanceCache.clear();
 
         try {
-          const yt = await getInnertube(clientType);
-          const info = await yt.getBasicInfo(videoId);
+          const yt = await getInnertube(clientType, videoId);
+          let info: any;
+          if (clientType === 'WEB_REMIX') {
+            info = await yt.music.getInfo(videoId);
+          } else {
+            info = await yt.getBasicInfo(videoId);
+          }
           const stream = await info.download(downloadOptions);
           return { stream, info, clientType };
         } catch (retryErr: any) {

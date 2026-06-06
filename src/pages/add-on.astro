@@ -2,12 +2,15 @@
 import Layout from '../layouts/Layout.astro';
 import Navbar from '../components/Navbar.astro';
 import Footer from '../components/Footer.astro';
+
+const siteUrl = (process.env.SITE_URL || 'https://yttomp3-converter.onrender.com').replace(/\/$/, '');
+const hostName = siteUrl.replace(/^https?:\/\//, '');
 ---
 
 <Layout 
   title="Browser Extension & Add-On — ytomp3 Converter"
   description="Convert YouTube videos instantly with the ytomp3 browser extension or bookmarklet. Fast, safe, and direct from YouTube."
-  canonicalUrl="https://yttomp3-converter.onrender.com/add-on"
+  canonicalUrl={`${siteUrl}/add-on`}
 >
   <Navbar />
   
@@ -42,7 +45,7 @@ import Footer from '../components/Footer.astro';
             <p class="text-xs font-mono uppercase tracking-wider text-body">Drag this button to your bookmarks bar:</p>
             
             <a 
-              href="javascript:(function(){var url=window.location.href;if(url.indexOf('youtube.com/watch')!==-1){window.open('https://yttomp3-converter.onrender.com/?url='+encodeURIComponent(url));}else{alert('Drag this to your bookmarks, then click it while watching a YouTube video!');}})();" 
+              href={`javascript:(function(){var url=window.location.href;if(url.indexOf('youtube.com/watch')!==-1){window.open('${siteUrl}/?url='+encodeURIComponent(url));}else{alert('Drag this to your bookmarks, then click it while watching a YouTube video!');}})();`} 
               class="h-12 inline-flex items-center justify-center px-6 rounded-pill bg-[#7928ca] hover:bg-opacity-95 text-white font-medium text-sm transition-all duration-200 shadow-level-3 select-none cursor-move"
               id="bookmarklet-drag-btn"
               onclick="event.preventDefault(); alert('Drag this button into your browser bookmarks bar to install it! (Clicking it directly does not install it)');"
@@ -57,7 +60,7 @@ import Footer from '../components/Footer.astro';
               <li>Make sure your browser's bookmarks bar is visible (<kbd class="bg-canvas-soft-2 px-1 rounded border border-hairline text-primary">Ctrl+Shift+B</kbd> or <kbd class="bg-canvas-soft-2 px-1 rounded border border-hairline text-primary">Cmd+Shift+B</kbd>).</li>
               <li>Drag the purple <strong class="text-primary font-medium">Convert with ytomp3</strong> button above and drop it onto your bookmarks bar.</li>
               <li>Open YouTube and play any video.</li>
-              <li>Click the bookmarklet shortcut in your bookmarks bar. It will open a new tab containing yttomp3-converter.onrender.com with the video link pre-filled and ready to convert!</li>
+              <li>Click the bookmarklet shortcut in your bookmarks bar. It will open a new tab containing {hostName} with the video link pre-filled and ready to convert!</li>
             </ol>
           </div>
         </div>

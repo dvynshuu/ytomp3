@@ -1,6 +1,8 @@
 ---
 import '../styles/app.css';
 
+const siteUrl = (process.env.SITE_URL || 'https://yttomp3-converter.onrender.com').replace(/\/$/, '');
+
 interface Props {
 	title?: string;
 	description?: string;
@@ -11,16 +13,21 @@ interface Props {
 const {
 	title = "yt2mp3 — Free YouTube to MP3 & MP4 Converter",
 	description = "Convert and download YouTube videos to high-quality MP3 or MP4 for free with yt2mp3. Fast, safe, and works directly in your browser. No registration required.",
-	canonicalUrl = "https://yttomp3-converter.onrender.com",
+	canonicalUrl: rawCanonicalUrl = siteUrl,
 	keywords = "yt2mp3, yt2mp3 converter, yt2mp3 safe, yt2mp3 cc, yt2mp3 link, yt2mp3 download, yt2mp3 convert"
 } = Astro.props;
+
+// Resolve domain overrides (canonicalUrl passed from static pages) to use process.env.SITE_URL
+const canonicalUrl = rawCanonicalUrl.startsWith('https://yttomp3-converter.onrender.com')
+	? rawCanonicalUrl.replace('https://yttomp3-converter.onrender.com', siteUrl)
+	: rawCanonicalUrl;
 
 // JSON-LD structured data for the website
 const schemaMarkup = {
   "@context": "https://schema.org",
   "@type": "WebApplication",
   "name": "yt2mp3",
-  "url": "https://yttomp3-converter.onrender.com",
+  "url": siteUrl,
   "description": description,
   "applicationCategory": "MultimediaApplication",
   "operatingSystem": "All",
@@ -58,7 +65,7 @@ const schemaMarkup = {
 		<meta property="og:url" content={canonicalUrl} />
 		<meta property="og:title" content={title} />
 		<meta property="og:description" content={description} />
-		<meta property="og:image" content="https://yttomp3-converter.onrender.com/og-image.png" />
+		<meta property="og:image" content={`${siteUrl}/og-image.png`} />
 		<meta property="og:site_name" content="yt2mp3" />
 		<meta property="og:locale" content="en_US" />
 
@@ -67,7 +74,7 @@ const schemaMarkup = {
 		<meta property="twitter:url" content={canonicalUrl} />
 		<meta property="twitter:title" content={title} />
 		<meta property="twitter:description" content={description} />
-		<meta property="twitter:image" content="https://yttomp3-converter.onrender.com/og-image.png" />
+		<meta property="twitter:image" content={`${siteUrl}/og-image.png`} />
 
 		<!-- Preconnect to Google Fonts -->
 		<link rel="preconnect" href="https://fonts.googleapis.com" />

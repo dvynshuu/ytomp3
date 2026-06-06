@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "build": "astro build && node scripts/postbuild.js",
     "preview": "astro preview",
     "start": "node dist/server/entry.mjs",
     "astro": "astro"

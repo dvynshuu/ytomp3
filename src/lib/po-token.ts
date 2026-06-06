@@ -24,6 +24,8 @@ const TOKEN_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const REQUEST_KEY = 'O43z0dpjhgX20SCx4KAo'; // YouTube's BotGuard request key
 
 let cachedTokens: CachedTokens | null = null;
+const videoTokenCache = new Map<string, CachedTokens>();
+const videoGenerationPromises = new Map<string, Promise<CachedTokens>>();
 let generationPromise: Promise<CachedTokens> | null = null;
 let activeWindow: any = null;
 
@@ -39,8 +41,8 @@ try {
     if (!(key in globalThis)) {
       try {
         Object.defineProperty(globalThis, key, {
-          get: () => activeWindow?.[key],
-          set: (val) => { if (activeWindow) activeWindow[key] = val; },
+          get: () => (globalThis as any)._activeWindow?.[key],
+          set: (val) => { if ((globalThis as any)._activeWindow) (globalThis as any)._activeWindow[key] = val; },
           configurable: true
         });
       } catch (e) {
@@ -56,7 +58,7 @@ try {
  * Get cached tokens or generate fresh ones.
  * Environment variables take priority over auto-generated tokens.
  */
-export async function getOrGenerateTokens(): Promise<{
+export async function getOrGenerateTokens(videoId?: string): Promise<{
   poToken: string | undefined;
   visitorData: string | undefined;
 }> {
@@ -68,12 +70,38 @@ export async function getOrGenerateTokens(): Promise<{
     return { poToken: envPoToken, visitorData: envVisitorData };
   }
 
-  // 2. Check in-memory cache
+  // 2. If videoId is provided, generate/return a video-bound token
+  if (videoId) {
+    const cached = videoTokenCache.get(videoId);
+    if (cached && (Date.now() - cached.generatedAt) < TOKEN_TTL_MS) {
+      return { poToken: cached.poToken, visitorData: cached.visitorData };
+    }
+
+    let promise = videoGenerationPromises.get(videoId);
+    if (!promise) {
+      promise = generateFreshTokens(videoId).finally(() => {
+        videoGenerationPromises.delete(videoId);
+      });
+      videoGenerationPromises.set(videoId, promise);
+    }
+
+    try {
+      const tokens = await promise;
+      videoTokenCache.set(videoId, tokens);
+      return { poToken: tokens.poToken, visitorData: tokens.visitorData };
+    } catch (err) {
+      console.error(`[PoToken] Video-bound token generation failed for ${videoId}:`, err);
+      // Return undefined so innertube can still try without tokens
+      return { poToken: undefined, visitorData: undefined };
+    }
+  }
+
+  // 3. Otherwise, use/return the visitor-bound cached tokens
   if (cachedTokens && (Date.now() - cachedTokens.generatedAt) < TOKEN_TTL_MS) {
     return { poToken: cachedTokens.poToken, visitorData: cachedTokens.visitorData };
   }
 
-  // 3. Generate fresh tokens (coalesce concurrent calls)
+  // 4. Generate fresh visitor tokens (coalesce concurrent calls)
   if (!generationPromise) {
     generationPromise = generateFreshTokens()
       .finally(() => { generationPromise = null; });
@@ -94,15 +122,17 @@ export async function getOrGenerateTokens(): Promise<{
  */
 export function invalidateTokens(): void {
   cachedTokens = null;
+  videoTokenCache.clear();
+  videoGenerationPromises.clear();
   console.log('[PoToken] Token cache invalidated, will regenerate on next request');
 }
 
 /**
  * Generate fresh PO token + visitor data using bgutils-js.
  */
-async function generateFreshTokens(): Promise<CachedTokens> {
+async function generateFreshTokens(videoId?: string): Promise<CachedTokens> {
   const startTime = Date.now();
-  console.log('[PoToken] Generating fresh PO token + visitor data...');
+  console.log(`[PoToken] Generating fresh PO token + visitor data (${videoId ? 'video-bound' : 'visitor-bound'})...`);
 
   // Step 1: Create a lightweight Innertube instance to get visitorData
   const innertube = await Innertube.create({ retrieve_player: false });
@@ -119,6 +149,7 @@ async function generateFreshTokens(): Promise<CachedTokens> {
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
   });
   activeWindow = dom.window;
+  (globalThis as any)._activeWindow = dom.window;
   (globalThis as any).window = dom.window;
   (globalThis as any).document = dom.window.document;
 
@@ -126,7 +157,7 @@ async function generateFreshTokens(): Promise<CachedTokens> {
   const bgConfig: BgConfig = {
     fetch: (input: string | URL | globalThis.Request, init?: RequestInit) => fetch(input, init),
     globalObj: globalThis,
-    identifier: visitorData,
+    identifier: videoId || visitorData,
     requestKey: REQUEST_KEY
   };
 
@@ -153,14 +184,17 @@ async function generateFreshTokens(): Promise<CachedTokens> {
   const elapsed = Date.now() - startTime;
   console.log(`[PoToken] Successfully generated tokens in ${elapsed}ms`);
 
-  // Step 6: Cache and return
-  cachedTokens = {
+  const newTokens = {
     poToken: poTokenResult.poToken,
     visitorData,
     generatedAt: Date.now()
   };
 
-  return cachedTokens;
+  if (!videoId) {
+    cachedTokens = newTokens;
+  }
+
+  return newTokens;
 }
 
 /**
