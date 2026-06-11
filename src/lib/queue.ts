@@ -1,6 +1,7 @@
 import { Queue, Worker } from 'bullmq';
 import { queueRedisConnection } from './redis';
 import { downloadStreamWithFallback, getInfoWithFallback, findVideoFormat } from './innertube-cache';
+import { getEnv } from './env';
 import ffmpegPath from 'ffmpeg-static';
 import { spawn } from 'child_process';
 import { Readable } from 'stream';
@@ -10,7 +11,7 @@ import * as os from 'os';
 
 const globalSymbols = globalThis as any;
 
-const CACHE_DIR = process.env.CACHE_DIR || path.join(process.cwd(), '.cache', 'downloads');
+const CACHE_DIR = getEnv('CACHE_DIR') || path.join(process.cwd(), '.cache', 'downloads');
 export const mp3Dir = path.join(CACHE_DIR, 'mp3');
 export const mp4Dir = path.join(CACHE_DIR, 'mp4');
 
@@ -120,13 +121,6 @@ async function runConversionJob(job: any, videoId: string, format: string, quali
         }
       });
 
-      nodeStream.pipe(ffmpegProcess.stdin);
-
-      nodeStream.on('error', (err) => {
-        console.error('[Worker] YT Stream error:', err.message);
-        ffmpegProcess.stdin.destroy();
-      });
-
       ffmpegProcess.stdin.on('error', (err) => {
         if ((err as any).code !== 'EPIPE') {
           console.error('[Worker] FFmpeg stdin error:', err.message);
@@ -140,14 +134,40 @@ async function runConversionJob(job: any, videoId: string, format: string, quali
       });
 
       await new Promise<void>((resolve, reject) => {
-        ffmpegProcess.on('close', (code) => {
-          if (code === 0) {
-            resolve();
+        let settled = false;
+        let streamError: Error | null = null;
+        const settle = (err?: Error) => {
+          if (settled) return;
+          settled = true;
+          if (err) {
+            reject(err);
           } else {
-            reject(new Error(`FFmpeg exited with code ${code}. Stderr: ${ffmpegStderr}`));
+            resolve();
+          }
+        };
+
+        nodeStream.on('error', (err) => {
+          console.error('[Worker] YT Stream error:', err.message);
+          streamError = new Error(`YouTube stream failed while downloading media: ${err.message}`);
+          settle(streamError);
+          ffmpegProcess.stdin.destroy();
+          if (!ffmpegProcess.killed) {
+            ffmpegProcess.kill('SIGTERM');
           }
         });
-        ffmpegProcess.on('error', (err) => reject(err));
+
+        nodeStream.pipe(ffmpegProcess.stdin);
+
+        ffmpegProcess.on('close', (code) => {
+          if (code === 0) {
+            settle();
+          } else if (streamError) {
+            settle(streamError);
+          } else {
+            settle(new Error(`FFmpeg exited with code ${code}. Stderr: ${ffmpegStderr}`));
+          }
+        });
+        ffmpegProcess.on('error', (err) => settle(streamError || err));
       });
 
       job.updateProgress(90);

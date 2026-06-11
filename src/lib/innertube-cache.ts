@@ -1,5 +1,6 @@
 import { Innertube, Platform } from 'youtubei.js';
 import { getOrGenerateTokens, invalidateTokens } from './po-token';
+import { getEnv } from './env';
 
 // Setup signature decipher shim for Innertube (once)
 if (typeof Platform !== 'undefined' && Platform.shim) {
@@ -29,7 +30,7 @@ export const CLIENT_TYPES = ['WEB_REMIX', 'MWEB', 'ANDROID', 'WEB'] as const;
  * Get cookie from environment variable (cleaned).
  */
 function getEnvCookie(): string | undefined {
-  let cookie = process.env.YOUTUBE_COOKIE || undefined;
+  let cookie = getEnv('YOUTUBE_COOKIE');
   if (cookie) {
     cookie = cookie.replace(/^(cookie|Cookie):\s*/i, '').trim().replace(/^["']|["']$/g, '').trim();
   }
@@ -87,6 +88,11 @@ function fetchWithClientUAAndTimeout(timeoutMs: number = 30000): typeof fetch {
       }
       headers['Origin'] = 'https://www.youtube.com';
       headers['Referer'] = 'https://www.youtube.com';
+
+      const cookie = getEnvCookie();
+      if (cookie) {
+        headers['Cookie'] = cookie;
+      }
     }
     
     newInit.headers = headers;
@@ -174,6 +180,73 @@ function isTimeoutError(err: any): boolean {
   return msg.includes('fetch failed') || msg.includes('timeout') || msg.includes('timed out') ||
          err?.cause?.code === 'UND_ERR_CONNECT_TIMEOUT' ||
          err?.code === 'UND_ERR_CONNECT_TIMEOUT';
+}
+
+function buildDownloadFailureMessage(errors: string[]): string {
+  const details = errors.join('; ');
+  const rejectedByYouTube = errors.some((error) =>
+    error.includes('non 2xx status code') ||
+    error.includes('unplayable') ||
+    error.includes('LOGIN_REQUIRED') ||
+    error.includes('Sign in')
+  );
+
+  if (rejectedByYouTube && !getEnvCookie()) {
+    return `YouTube rejected the media stream before conversion could start. Set YOUTUBE_COOKIE from a logged-in browser session, restart the server, and try again. Details: ${details}`;
+  }
+
+  return `All client types failed to download stream: ${details}`;
+}
+
+async function probeDownloadStream(stream: any): Promise<any> {
+  if (!stream || typeof stream.getReader !== 'function' || typeof ReadableStream === 'undefined') {
+    return stream;
+  }
+
+  const reader = stream.getReader();
+  let firstRead: any;
+
+  try {
+    firstRead = await reader.read();
+  } catch (err) {
+    try {
+      reader.releaseLock();
+    } catch {}
+    throw err;
+  }
+
+  return new ReadableStream({
+    async pull(controller) {
+      try {
+        const result = firstRead || await reader.read();
+        firstRead = null;
+
+        if (result.done) {
+          try {
+            reader.releaseLock();
+          } catch {}
+          controller.close();
+          return;
+        }
+
+        controller.enqueue(result.value);
+      } catch (err) {
+        try {
+          reader.releaseLock();
+        } catch {}
+        controller.error(err);
+      }
+    },
+    async cancel(reason) {
+      try {
+        await reader.cancel(reason);
+      } finally {
+        try {
+          reader.releaseLock();
+        } catch {}
+      }
+    }
+  });
 }
 
 /**
@@ -267,7 +340,7 @@ export async function downloadStreamWithFallback(
       }
 
       console.log(`[Download] Trying ${clientType} client for stream...`);
-      const stream = await info.download(downloadOptions);
+      const stream = await probeDownloadStream(await info.download(downloadOptions));
       return { stream, info, clientType };
     } catch (err: any) {
       invalidateCache(clientType, videoId);
@@ -299,7 +372,7 @@ export async function downloadStreamWithFallback(
           } else {
             info = await yt.getBasicInfo(videoId);
           }
-          const stream = await info.download(downloadOptions);
+          const stream = await probeDownloadStream(await info.download(downloadOptions));
           return { stream, info, clientType };
         } catch (retryErr: any) {
           errors.push(`${clientType}(retry): ${retryErr?.message}`);
@@ -312,7 +385,7 @@ export async function downloadStreamWithFallback(
     }
   }
 
-  throw new Error(`All client types failed to download stream: ${errors.join('; ')}`);
+  throw new Error(buildDownloadFailureMessage(errors));
 }
 
 // Eagerly warm the primary client on module load

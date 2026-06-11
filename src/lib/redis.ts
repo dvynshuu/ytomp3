@@ -1,8 +1,9 @@
 import Redis from 'ioredis';
+import { getEnv } from './env';
 
 const globalSymbols = globalThis as any;
 
-const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+const redisUrl = getEnv('REDIS_URL') || 'redis://localhost:6379';
 
 // Helper to construct connection options with TLS support for rediss:// URLs
 function getRedisOptions(maxRetries: number | null) {

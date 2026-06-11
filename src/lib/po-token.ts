@@ -1,6 +1,7 @@
 import { BG, type BgConfig } from 'bgutils-js';
 import { JSDOM } from 'jsdom';
 import { Innertube } from 'youtubei.js';
+import { getEnv } from './env';
 
 // ─── PO Token Auto-Generation ──────────────────────────────────────────
 // Uses bgutils-js to generate Proof of Origin tokens required by YouTube
@@ -67,8 +68,8 @@ export async function getOrGenerateTokens(videoId?: string): Promise<{
   visitorData: string | undefined;
 }> {
   // 1. Environment variables take priority
-  const envPoToken = cleanEnvVar(process.env.PO_TOKEN);
-  const envVisitorData = cleanEnvVar(process.env.VISITOR_DATA);
+  const envPoToken = cleanEnvVar(getEnv('PO_TOKEN'));
+  const envVisitorData = cleanEnvVar(getEnv('VISITOR_DATA'));
 
   if (envPoToken && envVisitorData) {
     return { poToken: envPoToken, visitorData: envVisitorData };
@@ -216,4 +217,3 @@ function cleanEnvVar(value: string | undefined): string | undefined {
 function videoIdToUse(val: any): val is string {
   return typeof val === 'string' && val.length > 0;
 }
-

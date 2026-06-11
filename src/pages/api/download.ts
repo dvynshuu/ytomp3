@@ -1,12 +1,13 @@
 import { redisConnection } from '../../lib/redis';
 import { mp3Dir, mp4Dir } from '../../lib/queue';
+import { getEnv } from '../../lib/env';
 import { Readable } from 'stream';
 import * as fs from 'fs';
 import * as path from 'path';
 
 export const prerender = false;
 
-const CACHE_DIR = process.env.CACHE_DIR || path.join(process.cwd(), '.cache', 'downloads');
+const CACHE_DIR = getEnv('CACHE_DIR') || path.join(process.cwd(), '.cache', 'downloads');
 
 function sanitizeFilename(name: string) {
   return name.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim();

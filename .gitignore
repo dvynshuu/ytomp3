@@ -25,3 +25,7 @@ pnpm-debug.log*
 
 # cache folder
 .cache/
+
+# huggingface space repository
+huggingface-space/
+
