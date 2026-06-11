@@ -75,29 +75,12 @@ export async function getOrGenerateTokens(videoId?: string): Promise<{
     return { poToken: envPoToken, visitorData: envVisitorData };
   }
 
-  // 2. If videoId is provided, generate/return a video-bound token
+  // 2. We bypass video-bound tokens because they require expensive JSDOM challenge execution on every new video,
+  // which takes a long time (up to 30-40 seconds on low-resource container environments like Hugging Face Spaces).
+  // Instead, we always use and return visitor-bound tokens, which are cached for 6 hours.
   if (videoId) {
-    const cached = videoTokenCache.get(videoId);
-    if (cached && (Date.now() - cached.generatedAt) < TOKEN_TTL_MS) {
-      return { poToken: cached.poToken, visitorData: cached.visitorData };
-    }
-
-    let promise = videoGenerationPromises.get(videoId);
-    if (!promise) {
-      promise = generateFreshTokens(videoId).finally(() => {
-        videoGenerationPromises.delete(videoId);
-      });
-      videoGenerationPromises.set(videoId, promise);
-    }
-
-    try {
-      const tokens = await promise;
-      videoTokenCache.set(videoId, tokens);
-      return { poToken: tokens.poToken, visitorData: tokens.visitorData };
-    } catch (err) {
-      console.error(`[PoToken] Video-bound token generation failed for ${videoId}:`, err);
-      // Return undefined so innertube can still try without tokens
-      return { poToken: undefined, visitorData: undefined };
+    if (cachedTokens && (Date.now() - cachedTokens.generatedAt) < TOKEN_TTL_MS) {
+      return { poToken: cachedTokens.poToken, visitorData: cachedTokens.visitorData };
     }
   }
 

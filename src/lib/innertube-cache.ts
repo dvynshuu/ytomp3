@@ -121,16 +121,17 @@ export async function getInnertube(clientType?: string, videoId?: string): Promi
   const resolvedType = clientType || 'WEB_REMIX';
   const now = Date.now();
 
-  // Use video-bound tokens if videoId is provided
-  const useVideoBound = !!videoId;
-  const cacheKey = useVideoBound ? `${resolvedType}:${videoId}` : resolvedType;
+  // We use visitor-bound tokens and cache key to reuse the global client instances across all videos,
+  // since visitor-bound tokens are sufficient and avoid expensive JSDOM PO token generation.
+  const cacheKey = resolvedType;
 
   const cached = instanceCache.get(cacheKey);
   if (cached && (now - cached.createdAt) < CACHE_TTL_MS) {
     return cached.instance;
   }
 
-  const tokens = await getOrGenerateTokens(useVideoBound ? videoId : undefined);
+  // Generate visitor-bound tokens
+  const tokens = await getOrGenerateTokens();
   const cookie = getEnvCookie();
 
   console.log(`[Innertube] Creating ${resolvedType} client (poToken: ${tokens.poToken ? 'yes' : 'no'}, visitorData: ${tokens.visitorData ? 'yes' : 'no'}, cookie: ${cookie ? 'yes' : 'no'})`);
@@ -153,10 +154,9 @@ export async function getInnertube(clientType?: string, videoId?: string): Promi
  */
 export function invalidateCache(clientType?: string, videoId?: string) {
   if (clientType) {
+    instanceCache.delete(clientType);
     if (clientType === 'WEB_REMIX' && videoId) {
       instanceCache.delete(`${clientType}:${videoId}`);
-    } else {
-      instanceCache.delete(clientType);
     }
   } else {
     instanceCache.clear();

@@ -4,6 +4,10 @@ import { downloadStreamWithFallback, getInfoWithFallback, findVideoFormat } from
 import { getEnv } from './env';
 import ffmpegPath from 'ffmpeg-static';
 import { spawn } from 'child_process';
+
+// Prefer system ffmpeg on Linux (Docker / Hugging Face Spaces) where it is installed via apt.
+// Fall back to ffmpeg-static on other platforms (like Windows local dev).
+const ffmpegCmd = process.platform === 'linux' ? 'ffmpeg' : (ffmpegPath || 'ffmpeg');
 import { Readable } from 'stream';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -100,7 +104,7 @@ async function runConversionJob(job: any, videoId: string, format: string, quali
       const nodeStream = Readable.fromWeb(ytStream as any);
 
       // Spawn FFmpeg to transcode directly to the temp file
-      const ffmpegProcess = spawn(ffmpegPath || 'ffmpeg', [
+      const ffmpegProcess = spawn(ffmpegCmd, [
         '-hide_banner',
         '-loglevel', 'error',
         '-i', 'pipe:0',
@@ -272,7 +276,7 @@ async function runConversionJob(job: any, videoId: string, format: string, quali
         console.log(`[Worker] Muxing video and audio tracks...`);
         job.updateProgress(90);
 
-        const ffmpegProcess = spawn(ffmpegPath || 'ffmpeg', [
+        const ffmpegProcess = spawn(ffmpegCmd, [
           '-hide_banner',
           '-loglevel', 'error',
           '-i', videoTempPath,
